@@ -92,13 +92,43 @@ cuối cùng; nên cài thêm `earlyoom` vì nó phản ứng nhanh hơn.
 
 ## Hộp đen
 
-`~/.local/state/pc-health-watch/blackbox-YYYY-MM-DD.jsonl`: mỗi 10 giây một dòng JSON, ghi kèm
-`fsync` để dữ liệu thực sự nằm trên SSD trước khi máy đơ. Giữ 14 ngày, khoảng vài MB mỗi ngày.
+`~/.local/state/pc-health-watch/blackbox-YYYY-MM-DD.jsonl`: mỗi dòng một bản ghi JSON, ghi kèm
+`fsync` để dữ liệu thực sự nằm trên SSD trước khi máy đơ.
+
+- **Ghi thích ứng:** máy khỏe thì 30 giây/lần, bản rút gọn ~1 KB (3 cảm biến nóng nhất, top 3 tiến trình).
+  Khi có dấu hiệu căng (RAM ≥ 80%, swap ≥ 50%, PSI tăng, iowait cao, ≥ 85°C, có cảnh báo) thì
+  ghi mỗi lần đo (5 giây), bản đầy đủ, và giữ nhịp dày thêm 2 phút sau khi hết căng.
+- **Tự dọn:** ngày cũ nén gzip (~12 lần), xóa sau 14 ngày, tổng không vượt 200 MB.
+  Thực tế khoảng 3 MB cho ngày hiện tại và ~0,3 MB cho mỗi ngày cũ đã nén.
+- `healthwatch storage` xem dung lượng; `healthwatch storage --prune` dọn ngay.
+  Đổi trong config: `"storage": {"retention_days": 7, "max_total_mb": 100}`.
+
+## Tự tắt máy khi đơ quá 5 phút (freeze watchdog)
+
+```bash
+./install.sh --watchdog      # cài dịch vụ root; lần đầu hỏi chế độ log/act và poweroff/reboot
+```
+
+Một dịch vụ root nhỏ được khóa trong RAM (không bị swap, không đọc đĩa, không tạo tiến trình con)
+nên vẫn chạy khi máy đã đơ. Mỗi giây nó đo mức nghẽn RAM/ổ đĩa của kernel (PSI), đồng thời đọc
+"nhịp tim" giao diện do daemon người dùng thăm dò gnome-shell / X server.
+
+| Từ lúc bắt đầu đơ | Việc làm |
+|---|---|
+| 30 s | xác nhận đơ, ghi vào kernel log, bắt đầu ghi mẫu 1 giây/lần trong RAM |
+| 60 s, 120 s | nếu do hết RAM: SysRq-f (OOM killer đóng app ngốn RAM nhất), thường cứu được máy |
+| 280 s | ghi báo cáo `/var/lib/pc-health-watch/freeze-*.json` (nguyên nhân, diễn biến, tiến trình, lỗi kernel) |
+| 300 s | `act`: SysRq **s** (sync) → **u** (remount read-only) → **o** (tắt) / **b** (khởi động lại). `log`: chỉ ghi lại |
+
+Hết dấu hiệu liên tục 15 s thì hủy. Mới cài nên để `log` vài ngày, xem `journalctl -u pc-health-watch-watchdog`
+có báo nhầm không rồi đổi `"mode": "act"` trong `/etc/pc-health-watch/watchdog.json`.
+Sau khi máy bật lại, `healthwatch report` hiển thị báo cáo đóng băng.
+Chi tiết, giới hạn và lớp bảo vệ ở mức kernel (hardware watchdog, pstore): [docs/FREEZE-WATCHDOG.md](docs/FREEZE-WATCHDOG.md).
 
 ## Phát triển
 
 ```bash
-python3 -m unittest discover -s tests     # 45 test, không cần root
+python3 -m unittest discover -s tests     # không cần root
 python3 -m healthwatch status             # chạy thẳng từ repo
 python3 -m healthwatch.collectors.system  # in 2 snapshot thô
 ```

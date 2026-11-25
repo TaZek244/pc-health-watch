@@ -220,7 +220,7 @@ class Kmsg:
         if self.write_fd is None:
             return
         try:
-            os.write(self.write_fd, "<{}>pc-health-watch: {}".format(level, message).encode("utf-8")[:1000])
+            os.write(self.write_fd, f"<{level}>pc-health-watch: {message}".encode()[:1000])
         except OSError:
             pass
 
@@ -414,7 +414,9 @@ class Watchdog:
             self.processes = process_summary(self.root)
             self.last_proc_scan = now
         if frozen:
-            sample = dict(values, mono=round(now, 1), ts=round(time.time(), 1), **{"sig_" + k: v for k, v in signals.items()})
+            sample = dict(
+                values, mono=round(now, 1), ts=round(time.time(), 1), **{"sig_" + k: v for k, v in signals.items()}
+            )
             sample.update(memory_info(self.root))
             if self.processes:
                 sample["d_state_count"] = self.processes.get("d_state_count")
@@ -440,10 +442,10 @@ class Watchdog:
         elif kind == "oom_kill":
             t = round(self.detector.elapsed(now))
             if act:
-                self.note("thrashing RAM {} s — gọi OOM killer của kernel (SysRq-f) lần {}".format(t, arg), level=3)
+                self.note(f"thrashing RAM {t} s — gọi OOM killer của kernel (SysRq-f) lần {arg}", level=3)
                 self.sysrq("f")
             else:
-                self.note("[log] lẽ ra đã gọi OOM killer (SysRq-f) lần {}".format(arg))
+                self.note(f"[log] lẽ ra đã gọi OOM killer (SysRq-f) lần {arg}")
             self.actions.append({"t": t, "do": "oom_kill" if act else "would_oom_kill"})
         elif kind == "report":
             outcome = ("action_" + cfg["action"]) if act else "would_act"
@@ -452,12 +454,15 @@ class Watchdog:
             self.note("đã ghi báo cáo đóng băng" if ok else "không ghi được báo cáo (ổ đĩa treo?)")
         elif kind == "action":
             if not act:
-                self.note("[log] máy đơ {} s — lẽ ra đã {} (mode=log, không làm gì)".format(
-                    round(self.detector.elapsed(now)), cfg["action"]))
+                self.note(
+                    "[log] máy đơ {} s — lẽ ra đã {} (mode=log, không làm gì)".format(
+                        round(self.detector.elapsed(now)), cfg["action"]
+                    )
+                )
                 return
             self.emergency_stop()
         elif kind == "recovered":
-            self.note("máy đã hồi phục sau {} s đơ".format(arg), level=5)
+            self.note(f"máy đã hồi phục sau {arg} s đơ", level=5)
             self.actions.append({"t": arg, "do": "recovered"})
             if arg >= self.config["detect_seconds"]:
                 episode = self.detector.last_episode or {}
@@ -466,8 +471,12 @@ class Watchdog:
 
     def emergency_stop(self):
         key = "o" if self.config["action"] == "poweroff" else "b"
-        self.note("máy đơ quá lâu — sync, remount read-only rồi {} (SysRq s,u,{})".format(
-            "tắt máy" if key == "o" else "khởi động lại", key), level=2)
+        self.note(
+            "máy đơ quá lâu — sync, remount read-only rồi {} (SysRq s,u,{})".format(
+                "tắt máy" if key == "o" else "khởi động lại", key
+            ),
+            level=2,
+        )
         self.sysrq("s")  # đẩy dữ liệu trong RAM xuống đĩa
         self.sleep(5)
         self.sysrq("u")  # remount read-only: lần khởi động sau ext4 sạch
@@ -499,7 +508,7 @@ class Watchdog:
                 signals = self.tick(now)
                 self.write_status(signals, now)
             except Exception as error:  # không bao giờ để watchdog chết vì một vòng lỗi
-                self.log("lỗi vòng lặp: {!r}".format(error))
+                self.log(f"lỗi vòng lặp: {error!r}")
             self.stop_event.wait(1.0)
 
 
@@ -526,10 +535,10 @@ def _mlockall():
     try:
         libc = ctypes.CDLL("libc.so.6", use_errno=True)
         if libc.mlockall(1 | 2) != 0:  # MCL_CURRENT | MCL_FUTURE
-            return "mlockall lỗi errno {}".format(ctypes.get_errno())
+            return f"mlockall lỗi errno {ctypes.get_errno()}"
         return None
     except OSError as error:
-        return "mlockall: {}".format(error)
+        return f"mlockall: {error}"
 
 
 def _prune_reports():
@@ -560,12 +569,13 @@ def main(argv=None):
     try:
         from .collectors.kernel_log import classify
     except ImportError as error:
-        _log("không có kernel_log: {}".format(error))
+        _log(f"không có kernel_log: {error}")
     gui_hung = read_all = None
     try:
-        from .heartbeat import gui_hung, read_all_heartbeats as read_all
+        from .heartbeat import gui_hung
+        from .heartbeat import read_all_heartbeats as read_all
     except ImportError as error:
-        _log("không có heartbeat (bỏ tín hiệu giao diện): {}".format(error))
+        _log(f"không có heartbeat (bỏ tín hiệu giao diện): {error}")
     for path in (REPORT_DIR, os.path.dirname(STATUS_PATH)):
         try:
             os.makedirs(path, mode=0o755, exist_ok=True)

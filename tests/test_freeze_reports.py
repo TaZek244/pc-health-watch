@@ -18,8 +18,11 @@ class FreezeReportTest(unittest.TestCase):
                 "duration_seconds": 300,
                 "reason_text": ["hết RAM — hệ thống thrashing"],
                 "samples": [{"memory_full": 70.0, "available_mb": 40}, {"memory_full": 92.5, "available_mb": 12}],
-                "processes": {"top_memory": [{"name": "chrome", "rss_mb": 5000}], "d_state": [{"name": "kswapd0"}],
-                              "d_state_count": 1},
+                "processes": {
+                    "top_memory": [{"name": "chrome", "rss_mb": 5000}],
+                    "d_state": [{"name": "kswapd0"}],
+                    "d_state_count": 1,
+                },
                 "actions": [{"t": 60, "do": "oom_kill"}],
                 "kernel_events": [{"category": "memory", "summary": "OOM giết chrome"}],
             }
@@ -31,7 +34,16 @@ class FreezeReportTest(unittest.TestCase):
             found = fr.load_freeze_reports("0123456789abcdef0123456789abcdef", d)
             self.assertEqual(len(found), 1)
             text = fr.format_freeze(found[0])
-            for part in ("TẮT MÁY", "thrashing", "92%", "12 MB", "chrome 5000 MB", "kswapd0", "Giây 60", "OOM giết chrome"):
+            for part in (
+                "TẮT MÁY",
+                "thrashing",
+                "92%",
+                "12 MB",
+                "chrome 5000 MB",
+                "kswapd0",
+                "Giây 60",
+                "OOM giết chrome",
+            ):
                 self.assertIn(part, text)
 
 

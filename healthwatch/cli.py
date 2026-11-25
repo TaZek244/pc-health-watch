@@ -164,6 +164,16 @@ def cmd_status(args):
         return 0
     print(f"PC Health Watch {__version__} — nguồn: {source}\n")
     print(format_snapshot(snap, active))
+    from .freeze_reports import watchdog_status
+
+    wd = watchdog_status()
+    if wd:
+        state = (
+            "ĐANG NGHI ĐƠ {:.0f} s ({})".format(wd.get("elapsed") or 0, ", ".join(wd.get("reasons") or []))
+            if wd.get("frozen")
+            else "bình thường"
+        )
+        print("\nWatchdog: mode={} → {} sau 5 phút đơ — {}".format(wd.get("mode"), wd.get("action"), state))
     return 0
 
 
@@ -251,12 +261,12 @@ def cmd_storage(args):
             estimate = complete["bytes"] / 1024.0 / 1024.0 / ((max(stamps) - min(stamps)) / 86400.0)
         else:
             estimate = complete["bytes"] / 1024.0 / 1024.0
-    print("Thư mục: {}".format(directory))
+    print(f"Thư mục: {directory}")
     print("Số file: {}".format(len(usage["files"])))
     print("Tổng dung lượng: {:.2f} MB".format(usage["total_bytes"] / 1024.0 / 1024.0))
     print("Cũ nhất: {}".format(usage["oldest"] or "—"))
     print("Mới nhất: {}".format(usage["newest"] or "—"))
-    print("Ước tính MB/ngày: {}".format("{:.2f}".format(estimate) if estimate is not None else "—"))
+    print("Ước tính MB/ngày: {}".format(f"{estimate:.2f}" if estimate is not None else "—"))
     return 0
 
 
@@ -335,6 +345,15 @@ def _check_rows():
         "Daemon pc-health-watch",
         out_d.strip() or "không chạy",
         "systemctl --user enable --now pc-health-watch",
+    )
+    from .freeze_reports import watchdog_status
+
+    wd = watchdog_status()
+    add(
+        bool(wd),
+        "Freeze watchdog (tự tắt máy khi đơ)",
+        "mode={}, {}".format(wd.get("mode"), wd.get("action")) if wd else "chưa cài / không chạy",
+        "./install.sh --watchdog (xem docs/FREEZE-WATCHDOG.md)",
     )
     return rows
 

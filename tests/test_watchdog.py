@@ -59,7 +59,9 @@ class DetectorTest(unittest.TestCase):
 
     def test_config_floor(self):
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
-            json.dump({"mode": "act", "action": "reboot", "action_after_seconds": 5, "detect_seconds": 1, "mode2": 1}, f)
+            json.dump(
+                {"mode": "act", "action": "reboot", "action_after_seconds": 5, "detect_seconds": 1, "mode2": 1}, f
+            )
         try:
             c = wd.load_config(f.name)
         finally:
@@ -103,7 +105,9 @@ class SimulationTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = self.tmp.name
-        write(self.root, "proc/meminfo", "MemTotal: 8000000 kB\nMemAvailable: 50000 kB\nSwapTotal: 0 kB\nSwapFree: 0 kB\n")
+        write(
+            self.root, "proc/meminfo", "MemTotal: 8000000 kB\nMemAvailable: 50000 kB\nSwapTotal: 0 kB\nSwapFree: 0 kB\n"
+        )
         write(self.root, "proc/123/stat", "123 (chrome) D 1 1 1 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 0 0 1000000 0\n")
         self.reports = os.path.join(self.root, "reports")
         os.makedirs(self.reports)
@@ -124,9 +128,13 @@ class SimulationTest(unittest.TestCase):
             write(
                 self.root,
                 "proc/pressure/memory",
-                "some avg10=0 avg60=0 avg300=0 total={0}\nfull avg10=0 avg60=0 avg300=0 total={0}\n".format(mem_total),
+                f"some avg10=0 avg60=0 avg300=0 total={mem_total}\nfull avg10=0 avg60=0 avg300=0 total={mem_total}\n",
             )
-            write(self.root, "proc/pressure/io", "some avg10=0 avg60=0 avg300=0 total=0\nfull avg10=0 avg60=0 avg300=0 total=0\n")
+            write(
+                self.root,
+                "proc/pressure/io",
+                "some avg10=0 avg60=0 avg300=0 total=0\nfull avg10=0 avg60=0 avg300=0 total=0\n",
+            )
             w.tick(float(t))
         return keys, kmsg, w
 
@@ -150,15 +158,21 @@ class SimulationTest(unittest.TestCase):
         self.assertEqual(len(os.listdir(self.reports)), 1)
 
     def test_healthy_machine_does_nothing(self):
-        keys, kmsg, w = self.simulate("act", until=200, stall_from=10 ** 9)
+        keys, kmsg, w = self.simulate("act", until=200, stall_from=10**9)
         self.assertEqual(keys, [])
         self.assertEqual(kmsg.lines, [])
         self.assertEqual(len(w.samples), 0)  # máy khỏe: không tốn RAM ghi mẫu
 
     def test_gui_signal_from_heartbeat(self):
         keys = []
-        w = wd.Watchdog(cfg(mode="act"), root=self.root, sysrq_fn=lambda k: keys.append(k), kmsg=FakeKmsg(),
-                        heartbeats=lambda: [{"x": 1}], sleep=lambda s: None)
+        w = wd.Watchdog(
+            cfg(mode="act"),
+            root=self.root,
+            sysrq_fn=lambda k: keys.append(k),
+            kmsg=FakeKmsg(),
+            heartbeats=lambda: [{"x": 1}],
+            sleep=lambda s: None,
+        )
         w.gui_hung = lambda hb, now, secs: now >= 50
         write(self.root, "proc/pressure/memory", "some total=0\nfull total=0\n")
         write(self.root, "proc/pressure/io", "some total=0\nfull total=0\n")

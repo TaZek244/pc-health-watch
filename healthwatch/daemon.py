@@ -89,6 +89,10 @@ class Daemon:
         self.pressure_since = None
         self.last_relief = float("-inf")
         self.schedule = AdaptiveSchedule(cfg)
+        self.gui = None  # GuiMonitor
+        self.gui_command = None
+        self.last_probe_detect = float("-inf")
+        self.heartbeat = None
         self.next_wait = cfg["interval_seconds"]
         self.config_mtime = self._config_mtime()
 
@@ -250,11 +254,58 @@ class Daemon:
         elevated = is_elevated(decision, self.config)
         if self.schedule.due(now, elevated):
             self.recorder.write("sample", dict(compact(snapshot, full=elevated), elevated=elevated))
-        self.next_wait = self.schedule.elevated_seconds if (self.schedule.last_elevated or now < self.schedule.cooldown_until) else self.config["interval_seconds"]
+        self.next_wait = (
+            self.schedule.elevated_seconds
+            if (self.schedule.last_elevated or now < self.schedule.cooldown_until)
+            else self.config["interval_seconds"]
+        )
         self.drain_events(now)
         self.maybe_relieve_memory(snapshot, now)
+        self.beat(now)
         write_status(snapshot, list(self.active.values()))
         return snapshot
+
+    # ---------------------------------------------------------------- nhịp tim giao diện (cho watchdog root)
+
+    def beat(self, now):
+        settings = self.config.get("gui_probe") or {}
+        if not settings.get("enabled", True):
+            if self.gui is not None:
+                self.gui.stop(join_timeout=0)
+                self.gui = None
+            if self.heartbeat is not None:
+                self.heartbeat.stop()
+            return
+        try:
+            from .heartbeat import GuiMonitor, HeartbeatWriter, detect_probe
+            from .notify import gui_env
+        except ImportError:
+            return
+        if self.heartbeat is None:
+            self.heartbeat = HeartbeatWriter()
+        # môi trường đồ họa có thể chưa sẵn lúc daemon khởi động hoặc đổi khi đăng nhập lại: dò lại mỗi 5 phút
+        if now - self.last_probe_detect >= 300:
+            self.last_probe_detect = now
+            env = gui_env()
+            command = detect_probe(env)
+            if command != self.gui_command:
+                if self.gui is not None:
+                    self.gui.stop(join_timeout=0)
+                self.gui_command, self.gui = command, None
+                if command:
+                    self.gui = GuiMonitor(
+                        command,
+                        interval=settings.get("interval_seconds", 10),
+                        timeout=settings.get("timeout_seconds", 8),
+                        env=env,
+                    )
+                    self.gui.start()
+                    log("thăm dò giao diện bằng: " + " ".join(command[:2]))
+            self.desktop = env.get("XDG_CURRENT_DESKTOP", "")
+        if self.gui is None:
+            self.heartbeat.beat(None, None, getattr(self, "desktop", ""))
+        else:
+            self.heartbeat.beat(self.gui.state, self.gui.fail_since, getattr(self, "desktop", ""))
 
     # ---------------------------------------------------------------- chạy
 
@@ -280,6 +331,10 @@ class Daemon:
                     self.follower.stop()
                 except Exception:
                     pass
+            if self.gui is not None:
+                self.gui.stop(join_timeout=0)
+            if self.heartbeat is not None:
+                self.heartbeat.stop()  # watchdog thấy "stopped" → không coi là giao diện treo
             self.recorder.write("stop")
             self.recorder.close()
             log("đã dừng")

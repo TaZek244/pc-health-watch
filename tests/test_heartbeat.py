@@ -9,7 +9,6 @@ import unittest
 
 from healthwatch import heartbeat as hb
 
-
 GNOME_COMMAND = [
     "gdbus",
     "call",
@@ -186,9 +185,7 @@ class HeartbeatWriterTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "runtime", hb.HEARTBEAT_NAME)
             clock = FakeClock(1234.5)
-            writer = hb.HeartbeatWriter(
-                path=path, clock=clock, wall=lambda: 9876.25
-            )
+            writer = hb.HeartbeatWriter(path=path, clock=clock, wall=lambda: 9876.25)
 
             writer.beat(False, 1200.0, desktop="ubuntu:GNOME")
             data = hb.read_heartbeat(path)
@@ -230,23 +227,17 @@ class ReadHeartbeatsTest(unittest.TestCase):
             good_dir = os.path.join(run_root, "1000")
             os.makedirs(good_dir)
             good = heartbeat(uid=1000)
-            with open(
-                os.path.join(good_dir, hb.HEARTBEAT_NAME), "w", encoding="utf-8"
-            ) as stream:
+            with open(os.path.join(good_dir, hb.HEARTBEAT_NAME), "w", encoding="utf-8") as stream:
                 json.dump(good, stream)
 
             broken_dir = os.path.join(run_root, "1001")
             os.makedirs(broken_dir)
-            with open(
-                os.path.join(broken_dir, hb.HEARTBEAT_NAME), "w", encoding="utf-8"
-            ) as stream:
+            with open(os.path.join(broken_dir, hb.HEARTBEAT_NAME), "w", encoding="utf-8") as stream:
                 stream.write("{khong-phai-json")
 
             list_dir = os.path.join(run_root, "1002")
             os.makedirs(list_dir)
-            with open(
-                os.path.join(list_dir, hb.HEARTBEAT_NAME), "w", encoding="utf-8"
-            ) as stream:
+            with open(os.path.join(list_dir, hb.HEARTBEAT_NAME), "w", encoding="utf-8") as stream:
                 json.dump([1, 2, 3], stream)
 
             # Thư mục không có file nhịp tim cũng phải bị bỏ qua.
@@ -256,9 +247,7 @@ class ReadHeartbeatsTest(unittest.TestCase):
             self.assertEqual(result, [good])
 
     def test_missing_run_root_returns_empty(self):
-        self.assertEqual(
-            hb.read_all_heartbeats(run_root="/khong/ton/tai/dau"), []
-        )
+        self.assertEqual(hb.read_all_heartbeats(run_root="/khong/ton/tai/dau"), [])
 
     def test_read_heartbeat_bad_path(self):
         self.assertIsNone(hb.read_heartbeat("/khong/ton/tai.json"))
@@ -269,25 +258,17 @@ class GuiHungTest(unittest.TestCase):
         self.assertIs(hb.gui_hung(heartbeat(), now_mono=1010.0), True)
 
     def test_exactly_at_threshold(self):
-        self.assertIs(
-            hb.gui_hung(heartbeat(gui_fail_since=965.0), now_mono=1010.0), True
-        )
+        self.assertIs(hb.gui_hung(heartbeat(gui_fail_since=965.0), now_mono=1010.0), True)
 
     def test_not_enough_hang_time(self):
-        self.assertIs(
-            hb.gui_hung(heartbeat(gui_fail_since=980.0), now_mono=1010.0), False
-        )
+        self.assertIs(hb.gui_hung(heartbeat(gui_fail_since=980.0), now_mono=1010.0), False)
 
     def test_stopped_is_not_hung(self):
-        self.assertIs(
-            hb.gui_hung(heartbeat(status="stopped"), now_mono=1010.0), False
-        )
+        self.assertIs(hb.gui_hung(heartbeat(status="stopped"), now_mono=1010.0), False)
 
     def test_stale_heartbeat_is_not_trusted(self):
         # Nhịp tim cũ 201 giây: dù fail_since rất cũ cũng không được tắt máy.
-        self.assertIs(
-            hb.gui_hung(heartbeat(gui_fail_since=800.0), now_mono=1201.0), False
-        )
+        self.assertIs(hb.gui_hung(heartbeat(gui_fail_since=800.0), now_mono=1201.0), False)
 
     def test_gui_none_is_not_hung(self):
         self.assertIs(hb.gui_hung(heartbeat(gui=None), now_mono=1010.0), False)
@@ -296,9 +277,7 @@ class GuiHungTest(unittest.TestCase):
         self.assertIs(hb.gui_hung(heartbeat(gui=True), now_mono=1010.0), False)
 
     def test_missing_fail_since_is_not_hung(self):
-        self.assertIs(
-            hb.gui_hung(heartbeat(gui_fail_since=None), now_mono=1010.0), False
-        )
+        self.assertIs(hb.gui_hung(heartbeat(gui_fail_since=None), now_mono=1010.0), False)
 
     def test_non_dict_is_not_hung(self):
         self.assertIs(hb.gui_hung(None, now_mono=1010.0), False)

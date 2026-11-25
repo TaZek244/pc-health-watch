@@ -182,6 +182,7 @@ class FakeNotifier:
 class DaemonTest(unittest.TestCase):
     def make(self, series, c=None):
         c = c or cfg()
+        c["gui_probe"]["enabled"] = False  # không chạy thăm dò/ghi nhịp tim thật trong test
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         notifier = FakeNotifier()

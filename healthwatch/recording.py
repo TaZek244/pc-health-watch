@@ -29,7 +29,9 @@ def is_elevated(snapshot, cfg) -> bool:
         return True
     # cảnh báo dung lượng có thể kéo dài nhiều ngày — không phải lý do để ghi dày
     lasting = ("disk_free_gb",)
-    return any(alert.get("rule") not in lasting for alert in snapshot.get("active_alerts") or [] if isinstance(alert, dict))
+    return any(
+        alert.get("rule") not in lasting for alert in snapshot.get("active_alerts") or [] if isinstance(alert, dict)
+    )
 
 
 def _copy_fields(source, fields):
@@ -41,8 +43,7 @@ def compact(snapshot, full: bool = False) -> dict:
     snapshot = snapshot or {}
     result = {field: copy.deepcopy(snapshot.get(field)) for field in ("ts", "cpu", "memory", "pressure")}
     result["disks"] = [
-        _copy_fields(disk, ("mount", "free_gb", "used_percent", "readonly"))
-        for disk in snapshot.get("disks") or []
+        _copy_fields(disk, ("mount", "free_gb", "used_percent", "readonly")) for disk in snapshot.get("disks") or []
     ]
     io_items = snapshot.get("io") or []
     kept_io = []
@@ -66,8 +67,8 @@ def compact(snapshot, full: bool = False) -> dict:
     cpu_top = [item for item in top.get("cpu") or [] if isinstance(item, dict)]
     cpu_top = [item for item in cpu_top if not _number(item.get("cpu_percent")) or item.get("cpu_percent") >= 1]
     result["top"] = {
-        "memory": copy.deepcopy(memory_top[:5 if full else 3]),
-        "cpu": copy.deepcopy(cpu_top[:5 if full else 3]),
+        "memory": copy.deepcopy(memory_top[: 5 if full else 3]),
+        "cpu": copy.deepcopy(cpu_top[: 5 if full else 3]),
     }
     return result
 

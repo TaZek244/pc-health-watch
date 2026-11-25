@@ -185,9 +185,7 @@ class GuiMonitor:
             if self._thread is not None and self._thread.is_alive():
                 return self._thread
             self._stop_event.clear()
-            thread = threading.Thread(
-                target=self._loop, name="gui-heartbeat", daemon=True
-            )
+            thread = threading.Thread(target=self._loop, name="gui-heartbeat", daemon=True)
             self._thread = thread
         thread.start()
         return thread
@@ -246,9 +244,7 @@ class HeartbeatWriter:
         temp_path = None
         try:
             os.makedirs(directory, exist_ok=True)
-            fd, temp_path = tempfile.mkstemp(
-                prefix=".pc-health-watch-heartbeat-", dir=directory
-            )
+            fd, temp_path = tempfile.mkstemp(prefix=".pc-health-watch-heartbeat-", dir=directory)
             with os.fdopen(fd, "w", encoding="utf-8") as stream:
                 json.dump(payload, stream, ensure_ascii=False, separators=(",", ":"))
                 stream.flush()

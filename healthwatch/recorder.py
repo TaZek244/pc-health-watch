@@ -66,7 +66,9 @@ def storage_usage(directory) -> dict:
 
 
 class Recorder:
-    def __init__(self, directory=None, boot=None, retention_days=14, clock=time.time, max_total_mb=200, compress_after_days=1):
+    def __init__(
+        self, directory=None, boot=None, retention_days=14, clock=time.time, max_total_mb=200, compress_after_days=1
+    ):
         self.directory = directory or util.state_dir()
         self.boot = boot or util.boot_id()
         self.retention_days = retention_days
@@ -80,7 +82,7 @@ class Recorder:
         self._lock = threading.Lock()
 
     def path_for(self, day):
-        return os.path.join(self.directory, "blackbox-{}.jsonl".format(day))
+        return os.path.join(self.directory, f"blackbox-{day}.jsonl")
 
     def _open(self):
         day = time.strftime("%Y-%m-%d", time.localtime(self.clock()))
@@ -126,7 +128,13 @@ class Recorder:
         cutoff_day = time.strftime("%Y-%m-%d", time.localtime(now - self.compress_after_days * 86400))
         for name in _files(self.directory):
             match = _NAME_RE.match(name)
-            if not match or not _DATE_RE.match(match.group(1)) or name.endswith(".gz") or match.group(1) >= today or match.group(1) > cutoff_day:
+            if (
+                not match
+                or not _DATE_RE.match(match.group(1))
+                or name.endswith(".gz")
+                or match.group(1) >= today
+                or match.group(1) > cutoff_day
+            ):
                 continue
             source = os.path.join(self.directory, name)
             temporary = source + ".tmp"
@@ -171,7 +179,7 @@ class Recorder:
         for item in usage["files"]:
             if usage["total_bytes"] <= limit:
                 break
-            if item["name"].startswith("blackbox-{}".format(today)):
+            if item["name"].startswith(f"blackbox-{today}"):
                 continue
             try:
                 os.unlink(os.path.join(self.directory, item["name"]))
@@ -197,5 +205,5 @@ def read_recent(directory=None, seconds=600, now=None):
     directory = directory or util.state_dir()
     now = time.time() if now is None else now
     # chỉ mở các file đủ phủ khoảng thời gian cần (mỗi file 1 ngày) — không giải nén cả 14 ngày
-    names = _files(directory)[-(int(seconds // 86400) + 2):]
+    names = _files(directory)[-(int(seconds // 86400) + 2) :]
     return [record for record in iter_records(directory, names) if record.get("ts", 0) >= now - seconds]

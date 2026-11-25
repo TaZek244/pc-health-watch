@@ -41,6 +41,8 @@ DEFAULTS = {
         # Sức khỏe SSD qua smartctl (cần sudo không mật khẩu cho smartctl — xem README)
         "smart": {"enabled": True, "every_minutes": 60},
     },
+    # Thăm dò giao diện (gnome-shell/X/...) cho freeze watchdog: chỉ TIMEOUT mới tính là treo
+    "gui_probe": {"enabled": True, "interval_seconds": 10, "timeout_seconds": 8},
     "notify": {
         "desktop": True,  # notify-send
         "popup": True,  # cửa sổ GTK giữa màn hình cho mức critical

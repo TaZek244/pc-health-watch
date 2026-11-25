@@ -353,6 +353,18 @@ def build_report(boot_index=-1, state_directory=None, runner=util.run, classify=
     report["boot_id"] = boot_id
     report["boot"] = selected
     report["blackbox_records"] = len(records)
+    try:
+        from .freeze_reports import load_freeze_reports
+
+        report["freezes"] = load_freeze_reports(boot_id) if boot_id else []
+    except Exception:
+        report["freezes"] = []
+    for freeze in report["freezes"]:
+        reasons = "; ".join(freeze.get("reason_text") or [])
+        text = "Freeze watchdog xác nhận máy ĐƠ {:.0f} s ({}).".format(freeze.get("duration_seconds") or 0, reasons)
+        report.setdefault("findings", []).insert(0, {"severity": "critical", "text": text})
+    if report["freezes"] and report.get("clean") is not True:
+        report["clean"] = False
     return report
 
 
@@ -374,6 +386,12 @@ def format_report(report: Dict, color=False) -> str:
         lines.append(report["gap_note"])
     if not report.get("blackbox_records"):
         lines.append("(Không có dữ liệu hộp đen cho boot này — daemon chưa chạy lúc đó; chỉ dựa vào journal.)")
+    if report.get("freezes"):
+        from .freeze_reports import format_freeze
+
+        lines.append("\nBáo cáo của freeze watchdog:")
+        for freeze in report["freezes"]:
+            lines.append(format_freeze(freeze))
     lines.append("\nNguyên nhân khả dĩ:")
     symbols = {"critical": "[!!]", "warning": "[! ]", "info": "[i]"}
     if not report.get("findings"):

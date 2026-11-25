@@ -74,16 +74,17 @@ def format_freeze(report):
     for key, label in (("memory_full", "RAM nghẽn"), ("io_full", "ổ đĩa nghẽn")):
         value = _peak(samples, key)
         if value is not None:
-            peaks.append("{} tới {:.0f}% thời gian".format(label, value))
+            peaks.append(f"{label} tới {value:.0f}% thời gian")
     avail = [s.get("available_mb") for s in samples if isinstance(s.get("available_mb"), (int, float))]
     if avail:
-        peaks.append("RAM trống thấp nhất {} MB".format(min(avail)))
+        peaks.append(f"RAM trống thấp nhất {min(avail)} MB")
     if peaks:
         lines.append("  Đỉnh: " + ", ".join(peaks))
     procs = report.get("processes") or {}
     if procs.get("top_memory"):
         lines.append(
-            "  Ngốn RAM: " + ", ".join("{} {} MB".format(p.get("name"), p.get("rss_mb")) for p in procs["top_memory"][:3])
+            "  Ngốn RAM: "
+            + ", ".join("{} {} MB".format(p.get("name"), p.get("rss_mb")) for p in procs["top_memory"][:3])
         )
     if procs.get("d_state_count"):
         names = ", ".join(sorted({p.get("name") for p in procs.get("d_state") or []}))

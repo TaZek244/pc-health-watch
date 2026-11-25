@@ -16,7 +16,15 @@ SOUNDS = (
     "/usr/share/sounds/freedesktop/stereo/dialog-warning.oga",
     "/usr/share/sounds/freedesktop/stereo/bell.oga",
 )
-GUI_VARS = ("DISPLAY", "WAYLAND_DISPLAY", "DBUS_SESSION_BUS_ADDRESS", "XAUTHORITY", "XDG_RUNTIME_DIR")
+GUI_VARS = (
+    "DISPLAY",
+    "WAYLAND_DISPLAY",
+    "DBUS_SESSION_BUS_ADDRESS",
+    "XAUTHORITY",
+    "XDG_RUNTIME_DIR",
+    "XDG_CURRENT_DESKTOP",
+    "HYPRLAND_INSTANCE_SIGNATURE",
+)
 
 
 def gui_env(base=None, runner=util.run):

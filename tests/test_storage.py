@@ -1,12 +1,12 @@
-import gzip
 import json
 import os
 import tempfile
 import unittest
 
-from healthwatch import config as config_mod, postmortem
-from healthwatch.recording import AdaptiveSchedule, compact, is_elevated
+from healthwatch import config as config_mod
+from healthwatch import postmortem
 from healthwatch.recorder import Recorder, read_recent
+from healthwatch.recording import AdaptiveSchedule, compact, is_elevated
 
 
 def sample():
@@ -37,7 +37,9 @@ class RecordingTest(unittest.TestCase):
         self.assertFalse(is_elevated(source, cfg))
 
     def test_schedule_normal_elevated_and_cooldown(self):
-        schedule = AdaptiveSchedule({"recording": {"normal_seconds": 30, "elevated_seconds": 2, "cooldown_seconds": 120}})
+        schedule = AdaptiveSchedule(
+            {"recording": {"normal_seconds": 30, "elevated_seconds": 2, "cooldown_seconds": 120}}
+        )
         self.assertTrue(schedule.due(0, False))
         self.assertFalse(schedule.due(10, False))
         self.assertTrue(schedule.due(30, False))
@@ -69,7 +71,7 @@ class StorageTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             now = 1795564800
             day = __import__("time").strftime("%Y-%m-%d", __import__("time").localtime(now))
-            path = os.path.join(directory, "blackbox-{}.jsonl".format(day))
+            path = os.path.join(directory, f"blackbox-{day}.jsonl")
             open(path, "w").close()
             Recorder(directory, compress_after_days=0).compress_old(now)
             self.assertTrue(os.path.exists(path))
@@ -77,7 +79,7 @@ class StorageTest(unittest.TestCase):
     def test_quota_removes_oldest_but_not_today(self):
         with tempfile.TemporaryDirectory() as directory:
             for day in ("2026-11-20", "2026-11-21", "2026-11-25"):
-                with open(os.path.join(directory, "blackbox-{}.jsonl".format(day)), "wb") as stream:
+                with open(os.path.join(directory, f"blackbox-{day}.jsonl"), "wb") as stream:
                     stream.write(b"x" * 1000)
             Recorder(directory, max_total_mb=0.001).enforce_limits(1795564800)
             self.assertFalse(os.path.exists(os.path.join(directory, "blackbox-2026-11-20.jsonl")))
