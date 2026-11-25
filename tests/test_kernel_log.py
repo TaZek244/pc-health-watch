@@ -175,7 +175,7 @@ class TestClassifyNormal(unittest.TestCase):
             "wlp2s0: associated",
             "EXT4-fs (nvme0n1p2): mounted filesystem with ordered data mode. Opts: (null)",
             "Linux version 5.15.0-91-generic (buildd@lcy02-amd64-045)",
-            "audit: type=1400 audit(1700000000.000:42): apparmor=\"STATUS\"",
+            'audit: type=1400 audit(1700000000.000:42): apparmor="STATUS"',
         ]
         for line in lines:
             with self.subTest(line=line):
@@ -232,12 +232,7 @@ class TestDeduper(unittest.TestCase):
 class TestKernelLogFollower(unittest.TestCase):
     def test_follower_with_fake_command(self):
         # Lệnh giả bằng Python để không phụ thuộc journalctl/dmesg thật.
-        script = (
-            "import sys; "
-            "sys.stdout.write('a\\n"
-            "nvme nvme0: I/O 1 QID 2 timeout\\n'); "
-            "sys.stdout.flush()"
-        )
+        script = "import sys; sys.stdout.write('a\\nnvme nvme0: I/O 1 QID 2 timeout\\n'); sys.stdout.flush()"
         events = []
         received = threading.Event()
 

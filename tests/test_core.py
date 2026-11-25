@@ -40,7 +40,9 @@ def cfg():
 class ConfigTest(unittest.TestCase):
     def test_merge_partial_and_reject_bad_types(self):
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
-            json.dump({"rules": {"memory_used": {"warning": 80, "critical": "x"}}, "bogus": 1, "interval_seconds": -3}, f)
+            json.dump(
+                {"rules": {"memory_used": {"warning": 80, "critical": "x"}}, "bogus": 1, "interval_seconds": -3}, f
+            )
         try:
             c, err = config_mod.load_config(f.name)
         finally:
@@ -105,10 +107,19 @@ class RuleTest(unittest.TestCase):
         self.assertEqual(out, ["warning", "info"])
 
     def test_disk_free_lower_is_worse_and_readonly(self):
-        alerts = self.engine.evaluate(snap(free_gb=0.5, readonly=True), 0)
+        s = snap(free_gb=0.5, readonly=True)
+        s["disks"][0]["used_percent"] = 99.5
+        alerts = self.engine.evaluate(s, 0)
         rules = {a.rule: a.severity for a in alerts}
         self.assertEqual(rules.get("disk_free_gb"), "critical")
         self.assertEqual(rules.get("disk_readonly"), "critical")
+
+    def test_small_boot_partition_not_flagged(self):
+        s = snap()
+        s["disks"] = [{"mount": "/boot", "used_percent": 43.0, "free_gb": 0.3, "readonly": False}]
+        self.assertFalse([a for a in self.engine.evaluate(s, 0) if a.rule == "disk_free_gb"])
+        s["disks"][0].update(used_percent=97.0, free_gb=0.02)
+        self.assertEqual([a.severity for a in self.engine.evaluate(s, 1) if a.rule == "disk_free_gb"], ["critical"])
 
     def test_missing_pressure_is_ignored(self):
         s = snap()
@@ -151,7 +162,7 @@ class RecorderTest(unittest.TestCase):
             self.assertFalse(os.path.exists(old))
 
 
-class FakeCollector(object):
+class FakeCollector:
     def __init__(self, series):
         self.series = list(series)
 
@@ -159,7 +170,7 @@ class FakeCollector(object):
         return self.series.pop(0) if len(self.series) > 1 else self.series[0]
 
 
-class FakeNotifier(object):
+class FakeNotifier:
     def __init__(self):
         self.sent = []
         self.config = None
@@ -189,7 +200,7 @@ class DaemonTest(unittest.TestCase):
             for t in range(0, 40, 5):
                 d.tick(float(t))
         self.assertIn("critical", [s for s, _ in notifier.sent])
-        recs = read_recent(self.tmp.name, seconds=10 ** 10, now=10 ** 10)
+        recs = read_recent(self.tmp.name, seconds=10**10, now=10**10)
         types = {r["type"] for r in recs}
         self.assertTrue({"sample", "alert"} <= types)
 

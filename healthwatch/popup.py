@@ -76,7 +76,11 @@ def main(argv):
     buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
 
     def open_monitor(_button):
-        for command in (["gnome-system-monitor", "-p"], ["gnome-system-monitor"], ["x-terminal-emulator", "-e", "htop"]):
+        for command in (
+            ["gnome-system-monitor", "-p"],
+            ["gnome-system-monitor"],
+            ["x-terminal-emulator", "-e", "htop"],
+        ):
             try:
                 GLib.spawn_async(command, flags=GLib.SpawnFlags.SEARCH_PATH)
                 break
@@ -105,7 +109,7 @@ def main(argv):
         if remaining[0] <= 0:
             Gtk.main_quit()
             return False
-        hint.set_text("Tự đóng sau {} giây · Esc để đóng".format(remaining[0]))
+        hint.set_text(f"Tự đóng sau {remaining[0]} giây · Esc để đóng")
         return True
 
     tick()

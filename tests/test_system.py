@@ -5,7 +5,7 @@ import unittest
 from healthwatch.collectors.system import SystemCollector
 
 
-class FakeStat(object):
+class FakeStat:
     f_blocks = 1000
     f_bavail = 250
     f_frsize = 1024 * 1024
@@ -26,12 +26,30 @@ class SystemCollectorTest(unittest.TestCase):
         root = self.temp.name
         write_file(root, "proc/stat", "cpu  100 10 20 300 10 0 0 0\ncpu0 50 5 10 150 5\ncpu1 50 5 10 150 5\n")
         write_file(root, "proc/loadavg", "0.9 0.7 0.5 1/100 1\n")
-        write_file(root, "proc/meminfo", "MemTotal:       102400 kB\nMemAvailable:    51200 kB\nSwapTotal:       2048 kB\nSwapFree:        1024 kB\n")
+        write_file(
+            root,
+            "proc/meminfo",
+            "MemTotal:       102400 kB\nMemAvailable:    51200 kB\nSwapTotal:       2048 kB\nSwapFree:        1024 kB\n",
+        )
         write_file(root, "proc/pressure/cpu", "some avg10=1.20 avg60=0.50 avg300=0.10 total=1\n")
-        write_file(root, "proc/pressure/memory", "some avg10=2.00 avg60=1.00 avg300=0.1 total=1\nfull avg10=0.20 avg60=0.10 avg300=0.1 total=1\n")
-        write_file(root, "proc/pressure/io", "some avg10=3.00 avg60=2.00 avg300=0.1 total=1\nfull avg10=0.40 avg60=0.20 avg300=0.1 total=1\n")
-        write_file(root, "proc/self/mounts", "/dev/nvme0n1p2 / ext4 rw,relatime 0 0\n/dev/loop0 /snap/x squashfs ro 0 0\n")
-        write_file(root, "proc/diskstats", "259 0 nvme0n1 10 0 100 20 5 0 200 30 0 40 0\n259 1 nvme0n1p2 1 0 2 3 0 0 0 0 0 0 0\n")
+        write_file(
+            root,
+            "proc/pressure/memory",
+            "some avg10=2.00 avg60=1.00 avg300=0.1 total=1\nfull avg10=0.20 avg60=0.10 avg300=0.1 total=1\n",
+        )
+        write_file(
+            root,
+            "proc/pressure/io",
+            "some avg10=3.00 avg60=2.00 avg300=0.1 total=1\nfull avg10=0.40 avg60=0.20 avg300=0.1 total=1\n",
+        )
+        write_file(
+            root, "proc/self/mounts", "/dev/nvme0n1p2 / ext4 rw,relatime 0 0\n/dev/loop0 /snap/x squashfs ro 0 0\n"
+        )
+        write_file(
+            root,
+            "proc/diskstats",
+            "259 0 nvme0n1 10 0 100 20 5 0 200 30 0 40 0\n259 1 nvme0n1p2 1 0 2 3 0 0 0 0 0 0 0\n",
+        )
         write_file(root, "sys/class/hwmon/hwmon0/name", "coretemp\n")
         write_file(root, "sys/class/hwmon/hwmon0/temp1_input", "52000\n")
         write_file(root, "sys/class/hwmon/hwmon0/temp1_label", "Package id 0\n")

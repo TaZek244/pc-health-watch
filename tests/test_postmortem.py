@@ -34,12 +34,17 @@ class PostmortemTest(unittest.TestCase):
             self.assertEqual([record["ts"] for record in records], [2])
 
     def test_analyze_ram_disk_and_normal_hang(self):
-        sample = {"type": "sample", "ts": 1000, "memory": {"used_percent": 97},
-                  "top": {"memory": [{"name": "chrome", "rss_mb": 900}]}}
+        sample = {
+            "type": "sample",
+            "ts": 1000,
+            "memory": {"used_percent": 97},
+            "top": {"memory": [{"name": "chrome", "rss_mb": 900}]},
+        }
         report = postmortem.analyze([sample], [], False)
         self.assertTrue(any("Hết RAM" in finding["text"] for finding in report["findings"]))
-        report = postmortem.analyze([{"type": "sample", "ts": 1}],
-                                     [{"category": "disk", "severity": "critical", "summary": "I/O"}], False)
+        report = postmortem.analyze(
+            [{"type": "sample", "ts": 1}], [{"category": "disk", "severity": "critical", "summary": "I/O"}], False
+        )
         self.assertTrue(any("Kernel báo lỗi ổ đĩa" in finding["text"] for finding in report["findings"]))
         report = postmortem.analyze([{"type": "sample", "ts": 1}], [], False)
         self.assertTrue(any("đơ đột ngột" in finding["text"] for finding in report["findings"]))
@@ -61,14 +66,15 @@ class PostmortemTest(unittest.TestCase):
         self.assertIn("findings", report)
 
 
-
 class ReviewFixesTest(unittest.TestCase):
     def test_stopped_target_is_not_clean(self):
         text = "x\nsystemd[1]: Stopped target Sound Card.\npulseaudio: Shutting down.\nkernel: usb 1-1: disconnect"
         self.assertFalse(postmortem.shutdown_was_clean(text))
 
     def test_readonly_reported_once_with_mounts(self):
-        samples = [{"type": "sample", "ts": t, "disks": [{"mount": "/", "readonly": True, "free_gb": 9}]} for t in (1, 2, 3)]
+        samples = [
+            {"type": "sample", "ts": t, "disks": [{"mount": "/", "readonly": True, "free_gb": 9}]} for t in (1, 2, 3)
+        ]
         texts = [f["text"] for f in postmortem.analyze(samples, [], False)["findings"]]
         self.assertEqual(sum("read-only" in t for t in texts), 1)
 
@@ -87,14 +93,28 @@ class ReviewFixesTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as d:
             with open(os.path.join(d, "blackbox-2026-11-23.jsonl"), "w") as f:
-                f.write(json.dumps({"type": "start", "boot_id": "01234567-89ab-cdef-0123-456789abcdef", "ts": 1}) + "\n")
-                f.write(json.dumps({"type": "event", "boot_id": boot, "ts": 2, "category": "gpu",
-                                    "severity": "critical", "summary": "GPU rớt khỏi bus"}) + "\n")
+                f.write(
+                    json.dumps({"type": "start", "boot_id": "01234567-89ab-cdef-0123-456789abcdef", "ts": 1}) + "\n"
+                )
+                f.write(
+                    json.dumps(
+                        {
+                            "type": "event",
+                            "boot_id": boot,
+                            "ts": 2,
+                            "category": "gpu",
+                            "severity": "critical",
+                            "summary": "GPU rớt khỏi bus",
+                        }
+                    )
+                    + "\n"
+                )
             report = postmortem.build_report(-1, d, runner=runner, classify=lambda line: None)
         self.assertEqual(report["blackbox_records"], 2)
         self.assertFalse(report["clean"])  # có start, không có stop
         self.assertTrue(any("GPU" in f["text"] for f in report["findings"]))
         self.assertIn("BÁO CÁO", postmortem.format_report(report))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -39,13 +39,21 @@ def parse_smart_json(data):
     sata_temp = _attr(attrs, 194)
     if temp is None:
         temp = sata_temp
-    result = {"device": data.get("device", {}).get("name", ""), "model": str(model), "passed": passed,
-              "temp_c": float(temp) if isinstance(temp, (int, float)) else None,
-              "percent_used": nvme.get("percentage_used"), "media_errors": nvme.get("media_errors"),
-              "critical_warning": nvme.get("critical_warning"), "reallocated": _attr(attrs, 5),
-              "pending": _attr(attrs, 197), "uncorrectable": _attr(attrs, 198),
-              "power_on_hours": nvme.get("power_on_hours") or _attr(attrs, 9),
-              "unsafe_shutdowns": nvme.get("unsafe_shutdowns"), "problems": []}
+    result = {
+        "device": data.get("device", {}).get("name", ""),
+        "model": str(model),
+        "passed": passed,
+        "temp_c": float(temp) if isinstance(temp, (int, float)) else None,
+        "percent_used": nvme.get("percentage_used"),
+        "media_errors": nvme.get("media_errors"),
+        "critical_warning": nvme.get("critical_warning"),
+        "reallocated": _attr(attrs, 5),
+        "pending": _attr(attrs, 197),
+        "uncorrectable": _attr(attrs, 198),
+        "power_on_hours": nvme.get("power_on_hours") or _attr(attrs, 9),
+        "unsafe_shutdowns": nvme.get("unsafe_shutdowns"),
+        "problems": [],
+    }
     for key in ("percent_used", "media_errors", "critical_warning", "power_on_hours", "unsafe_shutdowns"):
         if result[key] is not None:
             try:
@@ -60,7 +68,11 @@ def parse_smart_json(data):
         result["problems"].append("NVMe có lỗi phương tiện")
     if (result["percent_used"] or 0) >= 90:
         result["problems"].append("Ổ đĩa đã sử dụng từ 90% độ bền")
-    for key, label in (("reallocated", "sector đã được remap"), ("pending", "sector đang chờ xử lý"), ("uncorrectable", "sector không thể sửa")):
+    for key, label in (
+        ("reallocated", "sector đã được remap"),
+        ("pending", "sector đang chờ xử lý"),
+        ("uncorrectable", "sector không thể sửa"),
+    ):
         if (result[key] or 0) > 0:
             result["problems"].append("Có " + label)
     return result

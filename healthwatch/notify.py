@@ -28,7 +28,7 @@ def gui_env(base=None, runner=util.run):
                 key, sep, value = line.partition("=")
                 if sep and key in GUI_VARS and not env.get(key):
                     env[key] = value
-    runtime = env.setdefault("XDG_RUNTIME_DIR", "/run/user/{}".format(os.getuid()))
+    runtime = env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
     if not env.get("DBUS_SESSION_BUS_ADDRESS") and os.path.exists(os.path.join(runtime, "bus")):
         env["DBUS_SESSION_BUS_ADDRESS"] = "unix:path=" + os.path.join(runtime, "bus")
     if not (env.get("DISPLAY") or env.get("WAYLAND_DISPLAY")):
@@ -36,7 +36,7 @@ def gui_env(base=None, runner=util.run):
     return env
 
 
-class Notifier(object):
+class Notifier:
     def __init__(self, config, log=None):
         self.config = config
         self.log = log or (lambda message: None)
@@ -70,4 +70,4 @@ class Notifier(object):
                 command, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True
             )
         except OSError as error:
-            self.log("không chạy được {}: {}".format(command[0], error))
+            self.log(f"không chạy được {command[0]}: {error}")

@@ -62,7 +62,7 @@ def pick_victim(snapshot, protect, uid=None, root="/"):
     return None
 
 
-class Daemon(object):
+class Daemon:
     def __init__(self, cfg, collector=None, recorder=None, notifier=None, follower_factory=None):
         self.config = cfg
         if collector is None:
@@ -107,7 +107,7 @@ class Daemon(object):
     def emit(self, severity, title, body, rule, key="", tag=None, value=None):
         record = {"rule": rule, "key": key, "severity": severity, "title": title, "body": body, "value": value}
         self.recorder.write("alert", record)
-        log("[{}] {} — {}".format(severity, title, body))
+        log(f"[{severity}] {title} — {body}")
         self.notifier.send(severity, title, body, tag=tag or "hw-" + rule)
 
     # ---------------------------------------------------------------- luồng phụ
@@ -122,13 +122,13 @@ class Daemon(object):
 
                 factory = KernelLogFollower
             except ImportError as error:
-                log("không có module kernel_log: {}".format(error))
+                log(f"không có module kernel_log: {error}")
                 return
         try:
             self.follower = factory(self.events.put)
             self.follower.start()
         except Exception as error:  # không để lỗi luồng phụ chặn daemon
-            log("không theo dõi được kernel log: {}".format(error))
+            log(f"không theo dõi được kernel log: {error}")
 
     def start_smart_thread(self):
         def loop():
@@ -148,7 +148,7 @@ class Daemon(object):
         try:
             results = smart.read_all()
         except Exception as error:
-            log("lỗi đọc SMART: {}".format(error))
+            log(f"lỗi đọc SMART: {error}")
             return
         for disk in results:
             self.recorder.write("smart", {"smart": disk})
@@ -210,7 +210,7 @@ class Daemon(object):
         try:
             os.kill(victim["pid"], signal.SIGTERM)
         except OSError as error:
-            log("không đóng được {}: {}".format(victim, error))
+            log(f"không đóng được {victim}: {error}")
             return
         self.last_relief = now
         self.pressure_since = None
@@ -229,12 +229,14 @@ class Daemon(object):
             self.recorder.write("sample", snapshot)
             self.last_record = now
         for alert in self.engine.evaluate(snapshot, now):
-            ident = "{}:{}".format(alert.rule, alert.key)
+            ident = f"{alert.rule}:{alert.key}"
             if alert.recovered:
                 self.active.pop(ident, None)
             else:
                 self.active[ident] = alert.to_dict()
-            self.emit(alert.severity, alert.title, alert.body, alert.rule, alert.key, tag="hw-" + ident, value=alert.value)
+            self.emit(
+                alert.severity, alert.title, alert.body, alert.rule, alert.key, tag="hw-" + ident, value=alert.value
+            )
         self.drain_events(now)
         self.maybe_relieve_memory(snapshot, now)
         write_status(snapshot, list(self.active.values()))
@@ -256,7 +258,7 @@ class Daemon(object):
                 try:
                     self.tick(time.monotonic())
                 except Exception as error:  # một vòng lỗi không được giết daemon
-                    log("lỗi vòng đo: {!r}".format(error))
+                    log(f"lỗi vòng đo: {error!r}")
                 self.stop_event.wait(self.config["interval_seconds"])
         finally:
             if self.follower is not None:

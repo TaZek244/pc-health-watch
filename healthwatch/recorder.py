@@ -12,7 +12,7 @@ import time
 from . import util
 
 
-class Recorder(object):
+class Recorder:
     def __init__(self, directory=None, boot=None, retention_days=14, clock=time.time):
         self.directory = directory or util.state_dir()
         self.boot = boot or util.boot_id()
@@ -24,7 +24,7 @@ class Recorder(object):
         self._lock = threading.Lock()
 
     def path_for(self, day):
-        return os.path.join(self.directory, "blackbox-{}.jsonl".format(day))
+        return os.path.join(self.directory, f"blackbox-{day}.jsonl")
 
     def _open(self):
         day = time.strftime("%Y-%m-%d", time.localtime(self.clock()))

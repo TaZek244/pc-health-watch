@@ -116,9 +116,9 @@ def format_snapshot(snap, active=None):
                 _fmt(io.get("await_ms"), "", 1),
             )
         )
-    temps = sorted(
-        (t for t in snap.get("thermal") or [] if t.get("temp_c") is not None), key=lambda t: -t["temp_c"]
-    )[:4]
+    temps = sorted((t for t in snap.get("thermal") or [] if t.get("temp_c") is not None), key=lambda t: -t["temp_c"])[
+        :4
+    ]
     if temps:
         lines.append(
             "Nhiệt "
@@ -130,8 +130,7 @@ def format_snapshot(snap, active=None):
     top = snap.get("top") or {}
     if top.get("memory"):
         lines.append(
-            "Top RAM  "
-            + ", ".join("{} {} MB".format(p.get("name"), _fmt(p.get("rss_mb"))) for p in top["memory"][:5])
+            "Top RAM  " + ", ".join("{} {} MB".format(p.get("name"), _fmt(p.get("rss_mb"))) for p in top["memory"][:5])
         )
     if top.get("cpu"):
         lines.append(
@@ -162,7 +161,7 @@ def cmd_status(args):
     if args.json:
         print(json.dumps({"source": source, "snapshot": snap, "active": active}, ensure_ascii=False, indent=2))
         return 0
-    print("PC Health Watch {} — nguồn: {}\n".format(__version__, source))
+    print(f"PC Health Watch {__version__} — nguồn: {source}\n")
     print(format_snapshot(snap, active))
     return 0
 
@@ -175,9 +174,13 @@ def cmd_history(args):
         print(json.dumps(records, ensure_ascii=False))
         return 0
     if not records:
-        print("Chưa có dữ liệu hộp đen trong {} phút qua (daemon có chạy không?)".format(args.minutes))
+        print(f"Chưa có dữ liệu hộp đen trong {args.minutes} phút qua (daemon có chạy không?)")
         return 1
-    print("{:<8} {:>6} {:>6} {:>6} {:>8} {:>7} {:>6}  {}".format("Giờ", "CPU%", "RAM%", "Swap%", "PSImem", "PSIio", "°C", "ghi chú"))
+    print(
+        "{:<8} {:>6} {:>6} {:>6} {:>8} {:>7} {:>6}  {}".format(
+            "Giờ", "CPU%", "RAM%", "Swap%", "PSImem", "PSIio", "°C", "ghi chú"
+        )
+    )
     for rec in records:
         when = time.strftime("%H:%M:%S", time.localtime(rec.get("ts", 0)))
         kind = rec.get("type")
@@ -206,7 +209,7 @@ def cmd_report(args):
     try:
         from . import postmortem
     except ImportError as error:
-        print("Thiếu module postmortem: {}".format(error), file=sys.stderr)
+        print(f"Thiếu module postmortem: {error}", file=sys.stderr)
         return 1
     report = postmortem.build_report(boot_index=args.boot)
     if args.json:
@@ -234,7 +237,12 @@ def _check_rows():
         " && sudo systemctl restart systemd-journald",
     )
     code, out = util.run(["journalctl", "-k", "-n", "1", "--no-pager", "-q"], timeout=5)
-    add(code == 0 and bool(out.strip()), "Đọc kernel log", "được" if out.strip() else "không", "sudo usermod -aG adm $USER (đăng xuất/vào lại)")
+    add(
+        code == 0 and bool(out.strip()),
+        "Đọc kernel log",
+        "được" if out.strip() else "không",
+        "sudo usermod -aG adm $USER (đăng xuất/vào lại)",
+    )
     sysrq = util.read_text("/proc/sys/kernel/sysrq")
     add(
         sysrq in ("1",) or (sysrq.isdigit() and int(sysrq) & 0x80 and int(sysrq) & 0x40 and int(sysrq) & 0x10),
@@ -242,7 +250,11 @@ def _check_rows():
         "kernel.sysrq = " + (sysrq or "?"),
         "echo 'kernel.sysrq=1' | sudo tee /etc/sysctl.d/99-sysrq.conf && sudo sysctl --system",
     )
-    oom = shutil.which("earlyoom") or os.path.exists("/usr/lib/systemd/systemd-oomd") or os.path.exists("/lib/systemd/systemd-oomd")
+    oom = (
+        shutil.which("earlyoom")
+        or os.path.exists("/usr/lib/systemd/systemd-oomd")
+        or os.path.exists("/lib/systemd/systemd-oomd")
+    )
     code_e, _ = util.run(["systemctl", "is-active", "--quiet", "earlyoom"], timeout=3)
     code_o, _ = util.run(["systemctl", "is-active", "--quiet", "systemd-oomd"], timeout=3)
     add(
@@ -252,7 +264,7 @@ def _check_rows():
         "sudo apt install earlyoom (Ubuntu 20.04) — tránh đơ cứng khi hết RAM",
     )
     swaps = util.read_text("/proc/swaps").splitlines()[1:]
-    add(bool(swaps), "Swap", "{} vùng swap".format(len(swaps)) if swaps else "không có", "tạo swapfile hoặc cài zram-config")
+    add(bool(swaps), "Swap", f"{len(swaps)} vùng swap" if swaps else "không có", "tạo swapfile hoặc cài zram-config")
     smartctl = shutil.which("smartctl")
     if smartctl:
         code_s, _ = util.run(["sudo", "-n", "smartctl", "--version"], timeout=5)
@@ -264,7 +276,12 @@ def _check_rows():
         )
     else:
         add(False, "SMART (sức khỏe SSD)", "chưa cài smartctl", "sudo apt install smartmontools")
-    add(bool(shutil.which("notify-send")), "notify-send", "có" if shutil.which("notify-send") else "thiếu", "sudo apt install libnotify-bin")
+    add(
+        bool(shutil.which("notify-send")),
+        "notify-send",
+        "có" if shutil.which("notify-send") else "thiếu",
+        "sudo apt install libnotify-bin",
+    )
     try:
         import gi  # noqa: F401
 
@@ -272,7 +289,12 @@ def _check_rows():
     except ImportError:
         add(False, "python3-gi (popup)", "thiếu", "sudo apt install python3-gi gir1.2-gtk-3.0")
     code_d, out_d = util.run(["systemctl", "--user", "is-active", "pc-health-watch"], timeout=3)
-    add(code_d == 0, "Daemon pc-health-watch", out_d.strip() or "không chạy", "systemctl --user enable --now pc-health-watch")
+    add(
+        code_d == 0,
+        "Daemon pc-health-watch",
+        out_d.strip() or "không chạy",
+        "systemctl --user enable --now pc-health-watch",
+    )
     return rows
 
 
@@ -281,12 +303,12 @@ def cmd_check(args):
     bad = 0
     for ok, name, detail, hint in rows:
         mark = "✔" if ok else "✘"
-        print("{} {:<40} {}".format(mark, name, detail))
+        print(f"{mark} {name:<40} {detail}")
         if not ok:
             bad += 1
             if hint:
                 print("    → " + hint)
-    print("\n{} mục cần xử lý.".format(bad) if bad else "\nMọi thứ sẵn sàng.")
+    print(f"\n{bad} mục cần xử lý." if bad else "\nMọi thứ sẵn sàng.")
     return 0 if not bad else 2
 
 
@@ -295,8 +317,8 @@ def cmd_test_alert(args):
 
     cfg, _ = config_mod.load_config()
     severity = "critical" if args.critical else "warning"
-    Notifier(cfg).send(severity, "Thử cảnh báo ({})".format(severity), "Nếu bạn thấy thông báo này thì cảnh báo hoạt động.")
-    print("Đã gửi cảnh báo thử mức {}.".format(severity))
+    Notifier(cfg).send(severity, f"Thử cảnh báo ({severity})", "Nếu bạn thấy thông báo này thì cảnh báo hoạt động.")
+    print(f"Đã gửi cảnh báo thử mức {severity}.")
     return 0
 
 
@@ -320,7 +342,7 @@ def build_parser():
     p = sub.add_parser("status")
     p.add_argument("--json", action="store_true")
     p = sub.add_parser("history")
-    p.add_argument("--minutes", type=int, default=15)
+    p.add_argument("-m", "--minutes", type=int, default=15)
     p.add_argument("--json", action="store_true")
     p = sub.add_parser("report")
     p.add_argument("--boot", type=int, default=-1, help="chỉ số boot của journalctl (-1 = lần trước)")

@@ -7,7 +7,7 @@ cho mỗi phân vùng. Mỗi key có trạng thái riêng nên phân vùng này 
 LEVELS = {"ok": 0, "warning": 1, "critical": 2}
 
 
-class Alert(object):
+class Alert:
     __slots__ = ("rule", "key", "severity", "title", "body", "value", "recovered")
 
     def __init__(self, rule, key, severity, title, body, value=None, recovered=False):
@@ -18,10 +18,10 @@ class Alert(object):
         return {name: getattr(self, name) for name in self.__slots__}
 
     def __repr__(self):
-        return "Alert({}/{} {} {!r})".format(self.rule, self.key, self.severity, self.title)
+        return f"Alert({self.rule}/{self.key} {self.severity} {self.title!r})"
 
 
-class _KeyState(object):
+class _KeyState:
     __slots__ = ("level", "candidate", "since", "last_alert")
 
     def __init__(self):
@@ -31,7 +31,7 @@ class _KeyState(object):
         self.last_alert = None
 
 
-class ThresholdRule(object):
+class ThresholdRule:
     """Luật ngưỡng chung.
 
     measure(snapshot) -> list[(key, value, ctx)]; describe(level, value, ctx) -> (title, body).
@@ -135,7 +135,7 @@ def _top_cpu(snapshot, count=3):
 
 
 def _ok_text(label):
-    return "{} đã trở lại bình thường".format(label), "Không cần làm gì thêm."
+    return f"{label} đã trở lại bình thường", "Không cần làm gì thêm."
 
 
 def _memory_used(snapshot):
@@ -151,7 +151,7 @@ def _describe_memory(level, value, snapshot):
     )
     if level == "critical":
         body += " Đóng bớt ứng dụng ngay, máy sắp đơ."
-    return "RAM đã dùng {:.0f}%".format(value), body
+    return f"RAM đã dùng {value:.0f}%", body
 
 
 def _swap_used(snapshot):
@@ -164,7 +164,7 @@ def _describe_swap(level, value, snapshot):
     if level == "ok":
         return _ok_text("Swap")
     return (
-        "Swap đã dùng {:.0f}%".format(value),
+        f"Swap đã dùng {value:.0f}%",
         "Hệ thống đang đẩy RAM xuống đĩa, máy sẽ chậm dần. Ngốn RAM nhất: {}.".format(_top_memory(snapshot) or "?"),
     )
 
@@ -177,7 +177,7 @@ def _describe_memory_pressure(level, value, snapshot):
     if level == "ok":
         return _ok_text("Áp lực bộ nhớ")
     return (
-        "Nghẽn bộ nhớ {:.0f}% thời gian".format(value),
+        f"Nghẽn bộ nhớ {value:.0f}% thời gian",
         "Các tiến trình đang phải chờ RAM (thrashing), giao diện sắp đứng. Ngốn RAM nhất: {}.".format(
             _top_memory(snapshot) or "?"
         ),
@@ -193,7 +193,7 @@ def _describe_io_pressure(level, value, snapshot):
         return _ok_text("Áp lực ổ đĩa")
     busiest = max(_get(snapshot, "io") or [{}], key=lambda d: d.get("util_percent") or 0)
     return (
-        "Nghẽn ổ đĩa {:.0f}% thời gian".format(value),
+        f"Nghẽn ổ đĩa {value:.0f}% thời gian",
         "Ổ {} bận {}%. Có thể do swap, chép file lớn hoặc SSD có vấn đề.".format(
             busiest.get("device", "?"), busiest.get("util_percent", "?")
         ),
@@ -231,22 +231,32 @@ def _describe_temperature(level, value, sensor):
         return _ok_text("Nhiệt độ")
     name = "{} {}".format(sensor.get("chip") or "", sensor.get("label") or "").strip()
     return (
-        "Nhiệt độ cao: {:.0f}°C".format(value),
+        f"Nhiệt độ cao: {value:.0f}°C",
         "Cảm biến {}. Ngốn CPU nhất: {}. Kiểm tra quạt/khe tản nhiệt.".format(
             name or "?", _top_cpu(sensor.get("snapshot") or {}) or "?"
         ),
     )
 
 
+DISK_FULL_PERCENT = 90
+
+
 def _disk_free(snapshot):
-    return [("free-" + str(d.get("mount")), d.get("free_gb"), d) for d in _get(snapshot, "disks") or []]
+    out = []
+    for d in _get(snapshot, "disks") or []:
+        free, used = d.get("free_gb"), d.get("used_percent")
+        if free is not None and used is not None and used < DISK_FULL_PERCENT:
+            # phân vùng nhỏ (/boot, /boot/efi) luôn có ít GB trống: chỉ xét GB khi đã dùng >= 90%
+            free = float("inf")
+        out.append(("free-" + str(d.get("mount")), free, d))
+    return out
 
 
 def _describe_disk_free(level, value, disk):
     if level == "ok":
         return _ok_text("Dung lượng " + str(disk.get("mount")))
     return (
-        "Phân vùng {} sắp đầy (còn {:.1f} GB)".format(disk.get("mount"), value),
+        "Phân vùng {} sắp đầy (còn {:.1f} GB)".format(disk.get("mount"), disk.get("free_gb") or 0),
         "Đã dùng {}%. Ổ đầy làm hệ thống treo khi ghi. Dọn: `sudo apt clean`, `journalctl --vacuum-size=200M`.".format(
             disk.get("used_percent", "?")
         ),
@@ -276,9 +286,7 @@ def build_rules():
     return {
         "memory_used": ThresholdRule("memory_used", _memory_used, _describe_memory, hysteresis=3),
         "swap_used": ThresholdRule("swap_used", _swap_used, _describe_swap, hysteresis=5),
-        "memory_pressure": ThresholdRule(
-            "memory_pressure", _memory_pressure, _describe_memory_pressure, hysteresis=5
-        ),
+        "memory_pressure": ThresholdRule("memory_pressure", _memory_pressure, _describe_memory_pressure, hysteresis=5),
         "io_pressure": ThresholdRule("io_pressure", _io_pressure, _describe_io_pressure, hysteresis=10),
         "io_latency": ThresholdRule("io_latency", _io_latency, _describe_io_latency, hysteresis=100),
         "temperature": ThresholdRule("temperature", _temperature, _describe_temperature, hysteresis=4),
@@ -293,7 +301,7 @@ def build_rules():
 FIXED_SETTINGS = {"disk_readonly": {"warning": 1, "critical": 1, "for_seconds": 0}}
 
 
-class RuleEngine(object):
+class RuleEngine:
     def __init__(self, config):
         self.rules = build_rules()
         self.config = config

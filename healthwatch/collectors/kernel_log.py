@@ -10,7 +10,6 @@ import threading
 import time
 from typing import Optional
 
-
 # Lệnh mặc định để đọc kernel log. journalctl được ưu tiên vì có timestamp
 # và không cần quyền root trên hầu hết bản phân phối hiện đại.
 JOURNAL_COMMAND = [
@@ -452,11 +451,7 @@ class Deduper:
             # Dọn bớt mục cũ để dict không phình mãi khi chạy lâu.
             if len(self._last) > 512:
                 cutoff = current - self.window
-                self._last = {
-                    old_key: old_time
-                    for old_key, old_time in self._last.items()
-                    if old_time >= cutoff
-                }
+                self._last = {old_key: old_time for old_key, old_time in self._last.items() if old_time >= cutoff}
             return False
 
 

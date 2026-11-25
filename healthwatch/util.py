@@ -24,7 +24,7 @@ def run(command, timeout=5, env=None):
             command,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
-            universal_newlines=True,
+            text=True,
             timeout=timeout,
             env=env,
         )

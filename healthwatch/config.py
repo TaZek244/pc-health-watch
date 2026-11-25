@@ -91,7 +91,7 @@ def load_config(path=None):
     except FileNotFoundError:
         return config, None
     except (OSError, ValueError) as error:
-        return config, "Không đọc được {}: {}".format(path, error)
+        return config, f"Không đọc được {path}: {error}"
     if not isinstance(raw, dict):
-        return config, "{} phải là một object JSON".format(path)
+        return config, f"{path} phải là một object JSON"
     return _merge(config, raw), None

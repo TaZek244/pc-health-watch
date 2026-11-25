@@ -8,8 +8,10 @@ from typing import Dict, List, Optional
 
 from healthwatch import util
 
-
-_BOOT_PREFIX_RE = re.compile(r"^\s*([+-]?\d+)\s+([0-9a-fA-F]{32}|[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})\s+(.+?)\s*$")
+_BOOT_PREFIX_RE = re.compile(
+    r"^\s*([+-]?\d+)\s+([0-9a-fA-F]{32}|[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})\s+(.+?)\s*$"
+)
+_STAMP_RE = re.compile(r"[A-Za-z]{3} \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?: [A-Za-z0-9+:-]+)?")
 _CLEAN_MARKERS = (
     "Reached target Power-Off",
     "Reached target Reboot",
@@ -42,17 +44,24 @@ def list_boots(runner=util.run) -> List[Dict]:
         except ValueError:
             continue
         remainder = match.group(3)
-        pieces = re.split(r"—|\s+-\s+", remainder, maxsplit=1)
-        if len(pieces) != 2:
-            continue
-        first = pieces[0].strip()
-        last = re.sub(r"\s+\d+\s*$", "", pieces[1]).strip()
-        result.append({
-            "index": index,
-            "boot_id": _normal_boot_id(match.group(2)),
-            "first": first,
-            "last": last,
-        })
+        # systemd 245 (Ubuntu 20.04): "Mon 2026-11-23 08:01:02 +07—Mon ..."; bản mới: hai mốc cách nhau dấu cách
+        stamps = _STAMP_RE.findall(remainder)
+        if len(stamps) >= 2:
+            first, last = stamps[0], stamps[1]
+        else:
+            pieces = re.split(r"—|\s+-\s+", remainder, maxsplit=1)
+            if len(pieces) != 2:
+                continue
+            first = pieces[0].strip()
+            last = re.sub(r"\s+\d+\s*$", "", pieces[1]).strip()
+        result.append(
+            {
+                "index": index,
+                "boot_id": _normal_boot_id(match.group(2)),
+                "first": first,
+                "last": last,
+            }
+        )
     return result
 
 
@@ -76,8 +85,9 @@ def load_blackbox(directory, boot_id) -> List[Dict]:
         return []
     records = []
     try:
-        names = sorted(name for name in os.listdir(directory)
-                       if name.startswith("blackbox-") and name.endswith(".jsonl"))
+        names = sorted(
+            name for name in os.listdir(directory) if name.startswith("blackbox-") and name.endswith(".jsonl")
+        )
     except OSError:
         return []
     for name in names:
@@ -96,6 +106,7 @@ def load_blackbox(directory, boot_id) -> List[Dict]:
                     continue
                 if _normal_boot_id(record.get("boot_id")) == wanted:
                     records.append(record)
+
     def sort_key(item):
         try:
             timestamp = float(item.get("ts", 0) or 0)
@@ -122,6 +133,7 @@ def _get(record, *keys):
 
 def _last_sample(records):
     samples = [record for record in records if record.get("type") == "sample"]
+
     def sample_sort_key(item):
         try:
             return float(item.get("ts", 0) or 0)
@@ -181,6 +193,7 @@ def analyze(samples_and_records, kernel_events, clean) -> Dict:
     """Tính đỉnh chỉ số và đưa ra các nguyên nhân khả dĩ bằng tiếng Việt."""
     records = list(samples_and_records or [])
     samples = [record for record in records if record.get("type") == "sample"]
+
     def sample_sort_key(item):
         try:
             return float(item.get("ts", 0) or 0)
@@ -190,9 +203,11 @@ def analyze(samples_and_records, kernel_events, clean) -> Dict:
     samples.sort(key=sample_sort_key)
     last = samples[-1] if samples else None
     last_ts = _number(last.get("ts")) if last else None
-    recent = [sample for sample in samples
-              if last_ts is not None and _number(sample.get("ts")) is not None
-              and last_ts - float(sample.get("ts")) <= 600]
+    recent = [
+        sample
+        for sample in samples
+        if last_ts is not None and _number(sample.get("ts")) is not None and last_ts - float(sample.get("ts")) <= 600
+    ]
     peaks = {
         "memory.used_percent": _max_value(recent, ("memory", "used_percent")),
         "memory.swap_used_percent": _max_value(recent, ("memory", "swap_used_percent")),
@@ -206,37 +221,46 @@ def analyze(samples_and_records, kernel_events, clean) -> Dict:
         "disks.min_free_gb": _disk_peak(recent, minimum=True),
     }
     findings = []
-    ram = (peaks["memory.used_percent"] is not None and peaks["memory.used_percent"] >= 95)
+    ram = peaks["memory.used_percent"] is not None and peaks["memory.used_percent"] >= 95
     ram = ram or (peaks["pressure.memory.full_avg10"] is not None and peaks["pressure.memory.full_avg10"] >= 10)
     ram = ram or (peaks["memory.swap_used_percent"] is not None and peaks["memory.swap_used_percent"] >= 80)
     if ram:
         text = "Hết RAM / swap: máy bị thrashing, có thể dẫn tới đơ."
-        top = sorted(_get(last or {}, "top", "memory") or [],
-                     key=lambda item: _number(item.get("rss_mb")) or 0, reverse=True)
+        top = sorted(
+            _get(last or {}, "top", "memory") or [], key=lambda item: _number(item.get("rss_mb")) or 0, reverse=True
+        )
         if top:
             process = top[0]
             text += " Tiến trình dùng RAM nhiều nhất: %s (%s MB)." % (
-                process.get("name", "?"), process.get("rss_mb", "?"))
+                process.get("name", "?"),
+                process.get("rss_mb", "?"),
+            )
         findings.append({"severity": "critical", "text": text})
-    io_bad = (peaks["pressure.io.full_avg10"] is not None and peaks["pressure.io.full_avg10"] >= 20)
+    io_bad = peaks["pressure.io.full_avg10"] is not None and peaks["pressure.io.full_avg10"] >= 20
     io_bad = io_bad or (peaks["cpu.iowait_percent"] is not None and peaks["cpu.iowait_percent"] >= 30)
     io_bad = io_bad or (peaks["io.util_percent"] is not None and peaks["io.util_percent"] >= 95)
     if io_bad:
         findings.append({"severity": "warning", "text": "Nghi SSD/ổ đĩa chậm, treo I/O hoặc hàng đợi I/O quá dài."})
     if peaks["thermal.max_c"] is not None and peaks["thermal.max_c"] >= 90:
         findings.append({"severity": "critical", "text": "Quá nhiệt: nhiệt độ cao nhất đạt từ 90°C."})
-    disk_full = peaks["disks.min_free_gb"] is not None and peaks["disks.min_free_gb"] < 1
+    # phân vùng nhỏ (/boot) luôn ít GB trống: chỉ coi là đầy khi đã dùng >= 90% và còn < 1 GB, hoặc >= 98%
+    disk_full = False
     readonly_mounts = set()
     for sample in recent:
         for disk in sample.get("disks") or []:
-            if (_number(disk.get("used_percent")) is not None and disk.get("used_percent") >= 98):
+            used, free = _number(disk.get("used_percent")), _number(disk.get("free_gb"))
+            if used is not None and (used >= 98 or (used >= 90 and free is not None and free < 1)):
                 disk_full = True
             if disk.get("readonly") is True and disk.get("mount") in ("/", "/home"):
                 readonly_mounts.add(disk.get("mount"))
     if readonly_mounts:
-        findings.append({"severity": "critical",
-                         "text": "Phân vùng %s bị remount read-only (kernel phát hiện lỗi đĩa/filesystem)."
-                         % ", ".join(sorted(readonly_mounts))})
+        findings.append(
+            {
+                "severity": "critical",
+                "text": "Phân vùng %s bị remount read-only (kernel phát hiện lỗi đĩa/filesystem)."
+                % ", ".join(sorted(readonly_mounts)),
+            }
+        )
     if disk_full:
         findings.append({"severity": "warning", "text": "Đĩa gần đầy, có thể làm hệ thống hoạt động bất thường."})
     by_category = {}
@@ -253,7 +277,11 @@ def analyze(samples_and_records, kernel_events, clean) -> Dict:
         return (" Ví dụ: " + "; ".join(found[:3]) + ".") if found else ""
 
     kernel_rules = (
-        (("disk", "filesystem"), "critical", "Kernel báo lỗi ổ đĩa / filesystem — nghi SSD, cáp/khe cắm hoặc firmware."),
+        (
+            ("disk", "filesystem"),
+            "critical",
+            "Kernel báo lỗi ổ đĩa / filesystem — nghi SSD, cáp/khe cắm hoặc firmware.",
+        ),
         (("hang",), "critical", "Kernel báo hung task / soft lockup — hệ thống bị treo ở mức kernel."),
         (("gpu",), "critical", "Driver GPU lỗi (thường gặp với NVIDIA/AMD trên Ubuntu 20.04)."),
         (("memory",), "critical", "Kernel phải chạy OOM killer — đã hết RAM."),
@@ -265,7 +293,12 @@ def analyze(samples_and_records, kernel_events, clean) -> Dict:
         if any(name in by_category for name in names):
             findings.append({"severity": severity, "text": text + examples(*names)})
     if not findings and clean is False:
-        findings.append({"severity": "warning", "text": "Máy đơ đột ngột khi tải bình thường: nghi driver đồ họa / phần cứng (RAM, nguồn) / firmware SSD; xem docs/TROUBLESHOOTING.md"})
+        findings.append(
+            {
+                "severity": "warning",
+                "text": "Máy đơ đột ngột khi tải bình thường: nghi driver đồ họa / phần cứng (RAM, nguồn) / firmware SSD; xem docs/TROUBLESHOOTING.md",
+            }
+        )
     gap_note = ""
     if clean is False and last_ts is not None:
         gap_note = "Bản ghi cuối lúc %s" % _fmt_time(last_ts)
@@ -286,6 +319,7 @@ def kernel_events_for_boot(index, runner=util.run, classify=None) -> List[Dict]:
     if classify is None:
         try:
             from healthwatch.collectors.kernel_log import classify as imported_classify
+
             classify = imported_classify
         except ImportError:
             return []
@@ -328,11 +362,14 @@ def build_report(boot_index=-1, state_directory=None, runner=util.run, classify=
         if record.get("type") == "event" and (record.get("category"), record.get("summary")) not in seen:
             events.append(record)
             seen.add((record.get("category"), record.get("summary")))
-    report = analyze(records, events, shutdown_was_clean(journal))
+    current = boot_index == 0 or (selected is not None and boot_id == _normal_boot_id(util.boot_id()))
+    # boot đang chạy thì chưa "tắt" — không được kết luận là đơ
+    report = analyze(records, events, None if current else shutdown_was_clean(journal))
     journal_time = _journal_last_time(journal)
     if report.get("gap_note") and journal_time:
         report["gap_note"] += ", journal cuối lúc %s" % journal_time
-    if report.get("clean") is None and records:
+    report["current"] = current
+    if report.get("clean") is None and records and not current:
         # journal không đọc được: daemon ghi "stop" khi dừng bình thường (tắt máy) → dùng làm dấu hiệu
         report["clean"] = any(record.get("type") == "stop" for record in records[-50:])
     report["boot_index"] = boot_index
@@ -349,7 +386,13 @@ def format_report(report: Dict, color=False) -> str:
     if boot:
         lines.append("Boot %s: %s → %s" % (boot.get("boot_id", "")[:12], boot.get("first", "?"), boot.get("last", "?")))
     clean = report.get("clean")
-    lines.append("Kết luận: %s" % ("tắt máy sạch" if clean is True else "không thấy tắt máy sạch" if clean is False else "không đủ dữ liệu"))
+    if report.get("current"):
+        lines.append("Kết luận: đây là lần khởi động hiện tại (máy đang chạy)")
+    else:
+        lines.append(
+            "Kết luận: %s"
+            % ("tắt máy sạch" if clean is True else "không thấy tắt máy sạch" if clean is False else "không đủ dữ liệu")
+        )
     if report.get("gap_note"):
         lines.append(report["gap_note"])
     if not report.get("blackbox_records"):
@@ -360,15 +403,21 @@ def format_report(report: Dict, color=False) -> str:
         lines.append("[i] Không thấy dấu hiệu bất thường.")
     for finding in report.get("findings", []):
         lines.append("%s %s" % (symbols.get(finding.get("severity"), "[i]"), finding.get("text", "")))
-    lines.append("\nĐỉnh 10 phút cuối:")
+    if report.get("peaks"):
+        lines.append("\nĐỉnh 10 phút cuối:")
     for key, value in report.get("peaks", {}).items():
         lines.append("  %-32s %s" % (key, value))
-    lines.append("\n3 sample cuối:")
+    if report.get("last_samples"):
+        lines.append("\n3 sample cuối:")
     for sample in report.get("last_samples", []):
-        lines.append("  %s  RAM=%s%% CPU=%s%%" % (_fmt_time(sample.get("ts")), _get(sample, "memory", "used_percent"), _get(sample, "cpu", "percent")))
+        lines.append(
+            "  %s  RAM=%s%% CPU=%s%%"
+            % (_fmt_time(sample.get("ts")), _get(sample, "memory", "used_percent"), _get(sample, "cpu", "percent"))
+        )
         for process in (_get(sample, "top", "memory") or [])[:1]:
             lines.append("    top RAM: %s (%s MB)" % (process.get("name", "?"), process.get("rss_mb", "?")))
-    lines.append("\nSự kiện kernel:")
+    if report.get("kernel_events"):
+        lines.append("\nSự kiện kernel:")
     for event in report.get("kernel_events", []):
         lines.append("  [%s] %s" % (event.get("category", "?"), event.get("summary", event.get("line", ""))))
     if report.get("alerts"):
