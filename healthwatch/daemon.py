@@ -12,6 +12,7 @@ from . import config as config_mod
 from . import util
 from .notify import Notifier
 from .recorder import Recorder
+from .recording import AdaptiveSchedule, compact, is_elevated
 from .rules import RuleEngine
 
 SEVERITY_RANK = {"info": 0, "warning": 1, "critical": 2}
@@ -70,7 +71,12 @@ class Daemon:
 
             collector = SystemCollector()
         self.collector = collector
-        self.recorder = recorder or Recorder(retention_days=cfg["retention_days"])
+        storage = cfg.get("storage") or {}
+        self.recorder = recorder or Recorder(
+            retention_days=storage.get("retention_days", cfg["retention_days"]),
+            max_total_mb=storage.get("max_total_mb", 200),
+            compress_after_days=storage.get("compress_after_days", 1),
+        )
         self.notifier = notifier or Notifier(cfg, log)
         self.engine = RuleEngine(cfg)
         self.events = queue.Queue()
@@ -82,7 +88,8 @@ class Daemon:
         self.dedupe = {}
         self.pressure_since = None
         self.last_relief = float("-inf")
-        self.last_record = float("-inf")
+        self.schedule = AdaptiveSchedule(cfg)
+        self.next_wait = cfg["interval_seconds"]
         self.config_mtime = self._config_mtime()
 
     # ---------------------------------------------------------------- tiện ích
@@ -101,7 +108,11 @@ class Daemon:
         self.config = cfg
         self.engine.config = cfg
         self.notifier.config = cfg
-        self.recorder.retention_days = cfg["retention_days"]
+        storage = cfg.get("storage") or {}
+        self.recorder.retention_days = storage.get("retention_days", cfg["retention_days"])
+        self.recorder.max_total_mb = storage.get("max_total_mb", 200)
+        self.recorder.compress_after_days = storage.get("compress_after_days", 1)
+        self.schedule = AdaptiveSchedule(cfg)
         log("đã nạp lại cấu hình")
 
     def emit(self, severity, title, body, rule, key="", tag=None, value=None):
@@ -225,9 +236,6 @@ class Daemon:
 
     def tick(self, now):
         snapshot = self.collector.sample()
-        if now - self.last_record >= self.config["record_every_seconds"]:
-            self.recorder.write("sample", snapshot)
-            self.last_record = now
         for alert in self.engine.evaluate(snapshot, now):
             ident = f"{alert.rule}:{alert.key}"
             if alert.recovered:
@@ -237,6 +245,12 @@ class Daemon:
             self.emit(
                 alert.severity, alert.title, alert.body, alert.rule, alert.key, tag="hw-" + ident, value=alert.value
             )
+        decision = dict(snapshot or {})
+        decision["active_alerts"] = list(self.active.values())
+        elevated = is_elevated(decision, self.config)
+        if self.schedule.due(now, elevated):
+            self.recorder.write("sample", dict(compact(snapshot, full=elevated), elevated=elevated))
+        self.next_wait = self.schedule.elevated_seconds if (self.schedule.last_elevated or now < self.schedule.cooldown_until) else self.config["interval_seconds"]
         self.drain_events(now)
         self.maybe_relieve_memory(snapshot, now)
         write_status(snapshot, list(self.active.values()))
@@ -259,7 +273,7 @@ class Daemon:
                     self.tick(time.monotonic())
                 except Exception as error:  # một vòng lỗi không được giết daemon
                     log(f"lỗi vòng đo: {error!r}")
-                self.stop_event.wait(self.config["interval_seconds"])
+                self.stop_event.wait(self.next_wait)
         finally:
             if self.follower is not None:
                 try:

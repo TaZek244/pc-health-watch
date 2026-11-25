@@ -10,12 +10,13 @@ import time
 from . import __version__, util
 from . import config as config_mod
 
-USAGE = """healthwatch {daemon,status,history,report,check,test-alert,config}
+USAGE = """healthwatch {daemon,status,history,report,storage,check,test-alert,config}
 
   daemon        chạy theo dõi liên tục (thường do systemd --user chạy)
   status        tình trạng máy hiện tại
   history       số liệu hộp đen N phút gần nhất
   report        phân tích lần khởi động trước (sau khi máy đơ phải reset)
+  storage       tình trạng dung lượng hộp đen (thêm --prune để dọn ngay)
   check         kiểm tra môi trường: journal, quyền, SysRq, earlyoom, smartctl...
   test-alert    gửi thử cảnh báo
   config        in cấu hình đang dùng / mặc định
@@ -219,6 +220,46 @@ def cmd_report(args):
     return 0
 
 
+def cmd_storage(args):
+    from .recorder import Recorder, iter_records, storage_usage
+
+    cfg, error = config_mod.load_config()
+    if error:
+        print(error, file=sys.stderr)
+    directory = util.state_dir()
+    storage = cfg.get("storage") or {}
+    recorder = Recorder(
+        directory=directory,
+        retention_days=storage.get("retention_days", cfg.get("retention_days", 14)),
+        max_total_mb=storage.get("max_total_mb", 200),
+        compress_after_days=storage.get("compress_after_days", 1),
+    )
+    if args.prune:
+        recorder.compress_old(time.time())
+        recorder.enforce_limits(time.time())
+    usage = storage_usage(directory)
+    complete = None
+    for item in reversed(usage["files"]):
+        if item["name"].endswith(".gz") or item["name"].endswith(".jsonl"):
+            complete = item
+            break
+    estimate = None
+    if complete:
+        records = list(iter_records(directory, [complete["name"]]))
+        stamps = [record.get("ts") for record in records if isinstance(record.get("ts"), (int, float))]
+        if len(stamps) >= 2 and max(stamps) > min(stamps):
+            estimate = complete["bytes"] / 1024.0 / 1024.0 / ((max(stamps) - min(stamps)) / 86400.0)
+        else:
+            estimate = complete["bytes"] / 1024.0 / 1024.0
+    print("Thư mục: {}".format(directory))
+    print("Số file: {}".format(len(usage["files"])))
+    print("Tổng dung lượng: {:.2f} MB".format(usage["total_bytes"] / 1024.0 / 1024.0))
+    print("Cũ nhất: {}".format(usage["oldest"] or "—"))
+    print("Mới nhất: {}".format(usage["newest"] or "—"))
+    print("Ước tính MB/ngày: {}".format("{:.2f}".format(estimate) if estimate is not None else "—"))
+    return 0
+
+
 def _check_rows():
     rows = []  # (ok: True/False/None, tên, chi tiết, gợi ý)
 
@@ -347,6 +388,8 @@ def build_parser():
     p = sub.add_parser("report")
     p.add_argument("--boot", type=int, default=-1, help="chỉ số boot của journalctl (-1 = lần trước)")
     p.add_argument("--json", action="store_true")
+    p = sub.add_parser("storage")
+    p.add_argument("--prune", action="store_true")
     sub.add_parser("check")
     p = sub.add_parser("test-alert")
     p.add_argument("--critical", action="store_true")
@@ -365,6 +408,7 @@ def main(argv=None):
         "status": cmd_status,
         "history": cmd_history,
         "report": cmd_report,
+        "storage": cmd_storage,
         "check": cmd_check,
         "test-alert": cmd_test_alert,
         "config": cmd_config,

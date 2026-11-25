@@ -1,12 +1,11 @@
 """Phân tích hộp đen sau khi máy Linux bị treo hoặc reset."""
 
 import datetime
-import json
-import os
 import re
 from typing import Dict, List, Optional
 
 from healthwatch import util
+from healthwatch.recorder import iter_records
 
 _BOOT_PREFIX_RE = re.compile(
     r"^\s*([+-]?\d+)\s+([0-9a-fA-F]{32}|[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})\s+(.+?)\s*$"
@@ -83,29 +82,7 @@ def load_blackbox(directory, boot_id) -> List[Dict]:
     wanted = _normal_boot_id(boot_id)
     if not wanted:
         return []
-    records = []
-    try:
-        names = sorted(
-            name for name in os.listdir(directory) if name.startswith("blackbox-") and name.endswith(".jsonl")
-        )
-    except OSError:
-        return []
-    for name in names:
-        path = os.path.join(directory, name)
-        try:
-            stream = open(path, encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        with stream:
-            for line in stream:
-                try:
-                    record = json.loads(line)
-                except (ValueError, TypeError):
-                    continue
-                if not isinstance(record, dict):
-                    continue
-                if _normal_boot_id(record.get("boot_id")) == wanted:
-                    records.append(record)
+    records = [record for record in iter_records(directory) if _normal_boot_id(record.get("boot_id")) == wanted]
 
     def sort_key(item):
         try:

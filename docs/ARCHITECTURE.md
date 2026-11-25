@@ -25,7 +25,8 @@ healthwatch/
     smart.py         read_smart(): sức khỏe SSD qua smartctl -j (tùy chọn)
     kernel_log.py    classify() + KernelLogFollower: lỗi kernel nguy hiểm
   rules.py           Rule engine: ngưỡng + thời gian kéo dài + hysteresis + cooldown
-  recorder.py        Hộp đen JSONL (fsync), xoay vòng theo ngày
+  recording.py       rút gọn snapshot + lịch ghi thường/căng thẳng
+  recorder.py        Hộp đen JSONL/gzip (fsync), xoay vòng và giới hạn dung lượng
   postmortem.py      `healthwatch report`: phân tích lần boot trước bị đơ
   notify.py          notify-send + popup GTK3 + âm thanh
   daemon.py          Vòng lặp chính
@@ -75,7 +76,8 @@ Một `dict` JSON-serializable. Trường không đọc được thì để `Non
 
 ## Bản ghi hộp đen (recorder)
 
-`~/.local/state/pc-health-watch/blackbox-YYYY-MM-DD.jsonl`, mỗi dòng một object:
+`~/.local/state/pc-health-watch/blackbox-YYYY-MM-DD.jsonl` (các ngày cũ được nén thành
+`.jsonl.gz`), mỗi dòng một object:
 
 - `{"type": "sample", "boot_id": "...", ...snapshot}`
 - `{"type": "event", "boot_id": "...", "ts": ..., ...kernel event}`
@@ -84,3 +86,11 @@ Một `dict` JSON-serializable. Trường không đọc được thì để `Non
 
 `boot_id` lấy từ `/proc/sys/kernel/random/boot_id`. Một boot có `start` mà không có
 `stop` + journal không có dấu hiệu tắt máy bình thường ⇒ nghi bị đơ/reset cứng.
+
+Snapshot được ghi thích ứng: bình thường mặc định 30 giây/lần, khi có dấu hiệu căng
+thì ghi theo nhịp đo (mặc định 5 giây, không thể nhanh hơn nhịp đo dù cấu hình là
+2 giây), chuyển sang
+căng ghi ngay, và giữ nhịp dày thêm 120 giây sau khi hết căng. Bản ghi thường giữ
+top 3 tiến trình và ba cảm biến nóng nhất; bản ghi căng giữ top 5. I/O rỗng được
+bỏ qua để giảm kích thước. `healthwatch storage` hiển thị dung lượng và
+`healthwatch storage --prune` chạy nén/dọn ngay. Recorder vẫn đọc được `.jsonl` cũ.
