@@ -12,6 +12,13 @@ DEFAULTS = {
     "interval_seconds": 5,
     "record_every_seconds": 10,
     "retention_days": 14,
+    "recording": {
+        "normal_seconds": 30,
+        "elevated_seconds": 2,
+        "cooldown_seconds": 120,
+        "elevated": {"memory_percent": 80, "temp_c": 85},
+    },
+    "storage": {"retention_days": 14, "max_total_mb": 200, "compress_after_days": 1},
     "rules": {
         # % RAM đã dùng (theo MemAvailable)
         "memory_used": {"enabled": True, "warning": 90, "critical": 96, "for_seconds": 20},
@@ -94,4 +101,13 @@ def load_config(path=None):
         return config, f"Không đọc được {path}: {error}"
     if not isinstance(raw, dict):
         return config, f"{path} phải là một object JSON"
-    return _merge(config, raw), None
+    config = _merge(config, raw)
+    # Tương thích cấu hình cũ; khóa mới trong storage được ưu tiên nếu có mặt.
+    if "recording" not in raw or not isinstance(raw.get("recording"), dict) or "normal_seconds" not in raw["recording"]:
+        if "record_every_seconds" in raw and isinstance(raw["record_every_seconds"], (int, float)):
+            config["recording"]["normal_seconds"] = config["record_every_seconds"]
+    if not isinstance(raw.get("storage"), dict) or "retention_days" not in raw["storage"]:
+        if "retention_days" in raw:
+            config["storage"]["retention_days"] = config["retention_days"]
+    config["retention_days"] = config["storage"]["retention_days"]
+    return config, None
