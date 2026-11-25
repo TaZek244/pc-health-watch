@@ -17,6 +17,7 @@ import errno
 import fcntl
 import json
 import os
+import queue
 import signal
 import sys
 import threading
@@ -326,6 +327,32 @@ def _write_json_atomic(path, data, fsync=True):
     os.replace(tmp, path)
 
 
+class ReportWriter:
+    """Một luồng ghi đĩa tạo sẵn từ lúc khởi động, nhận việc qua hàng đợi."""
+
+    def __init__(self):
+        self.jobs = queue.Queue(maxsize=2)
+        self.thread = threading.Thread(target=self._loop, name="report-writer", daemon=True)
+        self.thread.start()
+
+    def _loop(self):
+        while True:
+            path, report, done = self.jobs.get()
+            try:
+                _write_json_atomic(path, report)
+            except (OSError, TypeError, ValueError):
+                pass
+            done.set()
+
+    def save(self, path, report, timeout):
+        done = threading.Event()
+        try:
+            self.jobs.put_nowait((path, report, done))
+        except queue.Full:  # lần ghi trước còn kẹt trên ổ treo
+            return False
+        return done.wait(timeout)
+
+
 class Watchdog:
     def __init__(self, config, root="/", sysrq_fn=sysrq, kmsg=None, heartbeats=None, sleep=time.sleep, log=None):
         self.config = config
@@ -343,6 +370,7 @@ class Watchdog:
         self.gui_hung = None
         self.actions = []  # lịch sử việc đã làm trong đợt đơ hiện tại
         self.stop_event = threading.Event()
+        self._writer = None
 
     # -- tín hiệu
     def signals(self, now):
@@ -389,19 +417,25 @@ class Watchdog:
         }
 
     def save_report(self, report, timeout=10.0):
-        """Ghi trong luồng riêng; ổ treo thì bỏ qua sau `timeout` giây."""
+        """Giao cho luồng ghi tạo sẵn; ổ treo thì bỏ qua sau `timeout` giây.
+
+        Không tạo luồng mới lúc máy đang đơ: pthread_create phải cấp và khóa (mlockall) stack mới,
+        dễ thất bại hoặc kẹt khi RAM đã cạn.
+        """
+        if self._writer is None:
+            self._writer = ReportWriter()
         name = "freeze-{}.json".format(time.strftime("%Y%m%d-%H%M%S"))
+        return self._writer.save(os.path.join(REPORT_DIR, name), report, timeout)
 
-        def work():
-            try:
-                _write_json_atomic(os.path.join(REPORT_DIR, name), report)
-            except (OSError, TypeError, ValueError):
-                pass
-
-        thread = threading.Thread(target=work, name="report", daemon=True)
-        thread.start()
-        thread.join(timeout)
-        return not thread.is_alive()
+    def warm_up(self):
+        """Chạy trước mọi đường code dùng lúc đơ khi máy còn khỏe: bộ nhớ được cấp + khóa sẵn,
+        không phải xin trang mới đúng lúc RAM cạn."""
+        if self._writer is None:
+            self._writer = ReportWriter()
+        self.processes = process_summary(self.root)
+        memory_info(self.root)
+        json.dumps(self.build_report(time.monotonic(), "warmup"), ensure_ascii=False)
+        self.processes = None
 
     # -- một vòng
     def tick(self, now):
@@ -594,6 +628,7 @@ def main(argv=None):
 
     watchdog = Watchdog(config, kmsg=Kmsg(classify), heartbeats=read_all, log=_log)
     watchdog.gui_hung = gui_hung
+    watchdog.warm_up()
     signal.signal(signal.SIGTERM, lambda *_: watchdog.stop_event.set())
     signal.signal(signal.SIGINT, lambda *_: watchdog.stop_event.set())
     _log(

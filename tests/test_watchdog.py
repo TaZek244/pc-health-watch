@@ -157,6 +157,22 @@ class SimulationTest(unittest.TestCase):
         self.assertTrue(any("lẽ ra đã poweroff" in line for line in kmsg.lines))
         self.assertEqual(len(os.listdir(self.reports)), 1)
 
+    def test_report_writer_is_reused_and_warm_up_works(self):
+        w = wd.Watchdog(cfg(), root=self.root, sysrq_fn=lambda k: True, kmsg=FakeKmsg(), sleep=lambda s: None)
+        w.warm_up()
+        thread = w._writer.thread
+        self.assertTrue(w.save_report({"a": 1}))
+        self.assertTrue(w.save_report({"b": 2}))
+        self.assertIs(w._writer.thread, thread)  # không tạo luồng mới cho mỗi báo cáo
+        self.assertIsNone(w.processes)
+
+    def test_stuck_writer_does_not_block(self):
+        writer = wd.ReportWriter()
+        with mock.patch.object(wd, "_write_json_atomic", side_effect=lambda *a: __import__("time").sleep(3)):
+            self.assertFalse(writer.save("/x", {}, 0.2))  # ổ "treo": trả về sau timeout
+            self.assertFalse(writer.save("/x", {}, 0.2))
+            self.assertFalse(writer.save("/x", {}, 0.2))  # hàng đợi đầy: trả ngay, không chặn
+
     def test_healthy_machine_does_nothing(self):
         keys, kmsg, w = self.simulate("act", until=200, stall_from=10**9)
         self.assertEqual(keys, [])
