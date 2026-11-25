@@ -1,140 +1,137 @@
 # 🩺 pc-health-watch
 
-Theo dõi sức khỏe máy Linux liên tục, **cảnh báo trước khi máy đơ**, và ghi **hộp đen** xuống
-đĩa để sau khi phải bấm reset vẫn biết lúc đơ máy đang ra sao.
+Continuous Linux health monitoring with early alerts and a persistent black-box recorder for diagnosing freezes after a hard reset.
 
-Viết cho trường hợp: Ubuntu 20.04 cài trên một SSD riêng, thỉnh thoảng đơ cứng / đứng màn hình.
-Chỉ cần Python 3.8 + thư viện chuẩn (có sẵn trên Ubuntu 20.04), không cần root.
+## Features
 
-Tách và nâng cấp từ `alert-watch.py` của repo `custom_desktop`. Bản cũ chỉ theo dõi pin, Wi-Fi và
-Internet; bản này theo dõi những thứ thực sự làm máy đơ.
+- Monitors RAM, swap, memory and I/O PSI, disk latency and space, temperatures, read-only mounts, kernel errors, and SMART health.
+- Warning/critical thresholds require sustained conditions, use hysteresis, repeat ongoing critical alerts, and report recovery.
+- Records JSONL snapshots with `fsync` so recent data can survive a reset; retention and total-size limits are enforced automatically.
+- Sends desktop notifications; critical alerts can also use a GTK popup and sound.
+- Optional root freeze watchdog can record a freeze, attempt an OOM kill during memory thrashing, and power off or reboot after a prolonged freeze.
 
-## Theo dõi những gì
+## Requirements
 
-| Nhóm | Nguồn | Cảnh báo khi (mặc định) |
-|---|---|---|
-| RAM | `/proc/meminfo` | dùng ≥ 90% (warning) / ≥ 96% (critical) liên tục 20 s |
-| Swap | `/proc/meminfo` | dùng ≥ 70% / ≥ 90% |
-| **Áp lực bộ nhớ (PSI)** | `/proc/pressure/memory` | `full avg10` ≥ 10% / ≥ 30%: dấu hiệu thrashing, báo sớm nhất trước khi đơ |
-| Áp lực ổ đĩa (PSI) | `/proc/pressure/io` | `full avg10` ≥ 30% / ≥ 60% |
-| Độ trễ I/O | `/proc/diskstats` | trễ ≥ 300 ms / ≥ 1500 ms mỗi lệnh (SSD khỏe < 20 ms) |
-| Nhiệt độ | `/sys/class/hwmon` | ≥ 88°C / ≥ 97°C |
-| Dung lượng | `statvfs` | phân vùng dùng ≥ 90% và còn < 5 GB / < 1 GB |
-| Read-only | `/proc/mounts` | `/` hoặc `/home` bị kernel remount chỉ-đọc (lỗi đĩa) |
-| **Lỗi kernel** | `journalctl -k -f` | I/O error, NVMe timeout, ATA reset, EXT4 error, OOM, hung task, soft lockup, GPU Xid/hang, MCE… |
-| **SMART** | `smartctl -j` | SSD báo lỗi, sector hỏng, media error, mòn ≥ 90% (mỗi 60 phút) |
+- Linux with `systemd --user` and Python 3.8 or newer.
+- Normal installation: Python 3 only. `notify-send` (`libnotify-bin`) enables desktop notifications; `python3-gi` and `gir1.2-gtk-3.0` enable the critical GTK popup.
+- Optional SMART checks: `smartmontools`; passwordless sudo for the exact `smartctl -j -a` commands is configured by `./install.sh --smart-sudoers`.
+- Optional system setup: `earlyoom` (or `systemd-oomd`), persistent journald logs, kernel SysRq, and membership in `adm` improve diagnostics and recovery.
 
-Cảnh báo có **thời gian giữ** (không báo vì đỉnh nhọn), **hysteresis** (không nhấp nháy),
-**nhắc lại** mỗi 10 phút nếu còn critical, và báo khi **đã trở lại bình thường**.
-
-Mức critical hiện **popup GTK giữa màn hình** + tiếng bíp; warning chỉ hiện thông báo desktop.
-
-## Cài đặt
+## Installation
 
 ```bash
-git clone <repo> ~/pc-health-watch && cd ~/pc-health-watch
-./install.sh                 # chép vào ~/.local/share, tạo lệnh `healthwatch`, bật systemd --user
-healthwatch check            # kiểm tra môi trường, in lệnh sửa cho từng mục thiếu
+git clone https://github.com/TaZek244/pc-health-watch.git ~/pc-health-watch
+cd ~/pc-health-watch
+./install.sh
+healthwatch check
 ```
 
-Khuyên chạy thêm (cần sudo, mỗi bước đều hỏi trước):
+The installer copies the application to `~/.local/share/pc-health-watch`, creates `~/.local/bin/healthwatch`, installs and starts the `pc-health-watch` user service, and copies the documentation. Add `~/.local/bin` to `PATH` if needed.
+
+Optional setup steps ask before making system changes:
 
 ```bash
-./install.sh --setup-system  # journal lưu bền + Magic SysRq + earlyoom + nhóm adm + smartmontools
-./install.sh --smart-sudoers # cho phép daemon đọc SMART mà không cần mật khẩu (chỉ đúng lệnh smartctl -j -a)
+./install.sh --setup-system
+./install.sh --smart-sudoers
 ```
 
-Gói hệ thống dùng tới (đa số có sẵn trên Ubuntu desktop):
-`python3 python3-gi gir1.2-gtk-3.0 libnotify-bin` và tùy chọn `smartmontools earlyoom`.
-
-## Dùng
+To install the root freeze watchdog, which also asks whether to use logging or automatic action and poweroff or reboot:
 
 ```bash
-healthwatch status           # tình trạng hiện tại (đọc từ daemon, hoặc đo trực tiếp)
-healthwatch history -m 30    # bảng số liệu hộp đen 30 phút gần nhất
-healthwatch report           # ★ sau khi máy đơ phải reset: phân tích lần boot trước
-healthwatch report --boot -2 # lần trước nữa
-healthwatch test-alert --critical
-healthwatch config           # cấu hình đang dùng
-journalctl --user -u pc-health-watch -f   # log của daemon
+./install.sh --watchdog
 ```
 
-### Sau một lần đơ máy
+The watchdog is a small memory-locked root service that keeps running when the desktop is frozen. It watches kernel PSI every second plus a GUI heartbeat written by the user daemon:
 
-1. Bật máy lên, chạy `healthwatch report`.
-2. Báo cáo cho biết lần boot trước có tắt máy sạch không, thời điểm cuối cùng có số liệu,
-   giá trị đỉnh trong 10 phút cuối (RAM, swap, PSI, nhiệt, I/O), tiến trình ngốn RAM nhất,
-   lỗi kernel và **nguyên nhân khả dĩ**.
-3. Tra bảng "Thấy gì → nghi gì" trong [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
+| Time since freeze started | Action |
+|---|---|
+| 30 s | Confirm the freeze, log to the kernel log, start 1 s in-memory sampling |
+| 60 s, 120 s | If memory-bound: SysRq-f (kernel OOM killer), which often recovers the system |
+| 280 s | Write a report to `/var/lib/pc-health-watch/freeze-*.json` |
+| 300 s | `act` mode: SysRq sync, remount read-only, then poweroff or reboot. `log` mode: record only |
 
-Nếu số liệu cuối cùng hoàn toàn bình thường và không có lỗi kernel nào thì máy chết đột ngột.
-Nghi phần cứng: driver GPU, RAM, nguồn, firmware/APST của SSD. Xem mục 1.2, 1.3, 1.8 và 4 của tài liệu.
+The freeze is cancelled after 15 s without symptoms. Start in `log` mode for a few days, check `journalctl -u pc-health-watch-watchdog` for false positives, then set `"mode": "act"` in `/etc/pc-health-watch/watchdog.json`. Details: [docs/FREEZE-WATCHDOG.md](docs/FREEZE-WATCHDOG.md).
 
-## Cấu hình
+## Usage
 
-`~/.config/pc-health-watch/config.json`. Chỉ cần ghi khóa muốn đổi; daemon tự nạp lại khi file thay đổi.
-Xem toàn bộ khóa: `healthwatch config --default`.
+The user daemon normally runs through systemd. The CLI can read its current status or collect a direct snapshot if the daemon is unavailable.
+
+| Command | Purpose |
+|---|---|
+| `healthwatch status` | Current health status; add `--json` for JSON. |
+| `healthwatch history` | Recent black-box data; `-m N`/`--minutes N` selects minutes (default: 15), and `--json` outputs JSON. |
+| `healthwatch report` | Analyze the previous boot; `--boot N` selects a journal boot index (default: `-1`), and `--json` outputs JSON. |
+| `healthwatch storage` | Show black-box storage; add `--prune` to compress and enforce limits immediately. |
+| `healthwatch check` | Check Python, PSI, logs, permissions, OOM handling, SMART, notifications, daemon, and watchdog status. |
+| `healthwatch test-alert` | Send a warning test alert; add `--critical` for a critical alert. |
+| `healthwatch config` | Show the active configuration; add `--default` for all defaults. |
+| `healthwatch daemon` | Run the daemon directly. |
+
+Useful logs:
+
+```bash
+journalctl --user -u pc-health-watch -f
+sudo journalctl -u pc-health-watch-watchdog -f
+```
+
+After a hard reset, run `healthwatch report` first, then consult [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md). The report uses the previous boot's journal and available black-box/freeze data to summarize peaks, processes, kernel errors, and likely causes. Persistent journald logs are required to retain kernel messages across resets.
+
+## Configuration
+
+The user configuration is `~/.config/pc-health-watch/config.json` (or `$XDG_CONFIG_HOME/pc-health-watch/config.json`). Only changed keys are needed; the daemon reloads the file when it changes. Inspect the complete default configuration with:
+
+```bash
+healthwatch config --default
+```
+
+Default alert thresholds are:
+
+| Rule | Warning | Critical | Hold time |
+|---|---:|---:|---:|
+| RAM used | 90% | 96% | 20 s |
+| Swap used | 70% | 90% | 30 s |
+| Memory PSI `full avg10` | 10% | 30% | 10 s |
+| I/O PSI `full avg10` | 30% | 60% | 20 s |
+| I/O latency | 300 ms | 1500 ms | 15 s |
+| Hottest temperature | 88°C | 97°C | 15 s |
+| Disk free space (on partitions at least 90% full) | 5 GB | 1 GB | immediate |
+
+Kernel-log and SMART rules are enabled by default; SMART is checked every 60 minutes. Notifications are enabled, critical alerts repeat every 10 minutes, and sound is enabled by default. The daemon samples every 5 seconds. The black box stores a compact record every 30 seconds when the system is healthy and a full record on every sample under load (RAM ≥ 80%, swap ≥ 50%, rising PSI, high iowait, ≥ 85°C, or an active alert), continuing for 120 seconds after conditions clear. Storage defaults to 14 days and 200 MB.
+
+Example override:
 
 ```json
 {
   "rules": {
-    "memory_used": {"warning": 85, "critical": 95, "for_seconds": 15},
-    "temperature": {"warning": 85}
+    "memory_used": {"warning": 85, "critical": 95, "for_seconds": 15}
   },
   "notify": {"sound": false, "repeat_minutes": 5},
-  "actions": {"relieve_memory": {"enabled": true}}
+  "storage": {"retention_days": 7, "max_total_mb": 100}
 }
 ```
 
-`actions.relieve_memory` (**tắt mặc định**): khi PSI memory full ≥ 40% kéo dài 15 giây, gửi
-SIGTERM cho tiến trình ngốn RAM nhất **của bạn** (bỏ qua danh sách `protect`). Đây là lưới an toàn
-cuối cùng; nên cài thêm `earlyoom` vì nó phản ứng nhanh hơn.
+The optional `actions.relieve_memory` safeguard is disabled by default. If enabled, memory PSI `full avg10` at least 40% for 15 seconds causes SIGTERM to the largest matching process owned by the current user, excluding `protect` names.
 
-## Hộp đen
-
-`~/.local/state/pc-health-watch/blackbox-YYYY-MM-DD.jsonl`: mỗi dòng một bản ghi JSON, ghi kèm
-`fsync` để dữ liệu thực sự nằm trên SSD trước khi máy đơ.
-
-- **Ghi thích ứng:** máy khỏe thì 30 giây/lần, bản rút gọn ~1 KB (3 cảm biến nóng nhất, top 3 tiến trình).
-  Khi có dấu hiệu căng (RAM ≥ 80%, swap ≥ 50%, PSI tăng, iowait cao, ≥ 85°C, có cảnh báo) thì
-  ghi mỗi lần đo (5 giây), bản đầy đủ, và giữ nhịp dày thêm 2 phút sau khi hết căng.
-- **Tự dọn:** ngày cũ nén gzip (~12 lần), xóa sau 14 ngày, tổng không vượt 200 MB.
-  Thực tế khoảng 3 MB cho ngày hiện tại và ~0,3 MB cho mỗi ngày cũ đã nén.
-- `healthwatch storage` xem dung lượng; `healthwatch storage --prune` dọn ngay.
-  Đổi trong config: `"storage": {"retention_days": 7, "max_total_mb": 100}`.
-
-## Tự tắt máy khi đơ quá 5 phút (freeze watchdog)
+## Uninstall
 
 ```bash
-./install.sh --watchdog      # cài dịch vụ root; lần đầu hỏi chế độ log/act và poweroff/reboot
+./install.sh --uninstall
 ```
 
-Một dịch vụ root nhỏ được khóa trong RAM (không bị swap, không đọc đĩa, không tạo tiến trình con)
-nên vẫn chạy khi máy đã đơ. Mỗi giây nó đo mức nghẽn RAM/ổ đĩa của kernel (PSI), đồng thời đọc
-"nhịp tim" giao diện do daemon người dùng thăm dò gnome-shell / X server.
+This removes the user installation, user service, generated command, SMART sudoers file, and installed watchdog files. Black-box data in `~/.local/state/pc-health-watch` and watchdog configuration/reports in `/etc/pc-health-watch` and `/var/lib/pc-health-watch` are retained; remove them manually if no longer needed.
 
-| Từ lúc bắt đầu đơ | Việc làm |
-|---|---|
-| 30 s | xác nhận đơ, ghi vào kernel log, bắt đầu ghi mẫu 1 giây/lần trong RAM |
-| 60 s, 120 s | nếu do hết RAM: SysRq-f (OOM killer đóng app ngốn RAM nhất), thường cứu được máy |
-| 280 s | ghi báo cáo `/var/lib/pc-health-watch/freeze-*.json` (nguyên nhân, diễn biến, tiến trình, lỗi kernel) |
-| 300 s | `act`: SysRq **s** (sync) → **u** (remount read-only) → **o** (tắt) / **b** (khởi động lại). `log`: chỉ ghi lại |
+## Project layout
 
-Hết dấu hiệu liên tục 15 s thì hủy. Mới cài nên để `log` vài ngày, xem `journalctl -u pc-health-watch-watchdog`
-có báo nhầm không rồi đổi `"mode": "act"` trong `/etc/pc-health-watch/watchdog.json`.
-Sau khi máy bật lại, `healthwatch report` hiển thị báo cáo đóng băng.
-Chi tiết, giới hạn và lớp bảo vệ ở mức kernel (hardware watchdog, pstore): [docs/FREEZE-WATCHDOG.md](docs/FREEZE-WATCHDOG.md).
-
-## Phát triển
-
-```bash
-python3 -m unittest discover -s tests     # không cần root
-python3 -m healthwatch status             # chạy thẳng từ repo
-python3 -m healthwatch.collectors.system  # in 2 snapshot thô
+```text
+healthwatch/   Collector, daemon, rules, recorder, CLI, reports, and watchdog code
+systemd/       User daemon and root watchdog unit files
+docs/          Architecture, troubleshooting, and freeze-watchdog documentation
+tests/         Unit tests
+install.sh     Installer, optional system setup, watchdog setup, and uninstall
 ```
 
-Kiến trúc và định dạng dữ liệu: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for internals and [docs/FREEZE-WATCHDOG.md](docs/FREEZE-WATCHDOG.md) for watchdog behavior and limitations.
 
 ## License
 
-MIT — xem [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
