@@ -444,7 +444,8 @@ class Watchdog:
             self.kmsg.poll(now)
         signals, values = self.signals(now)
         frozen = self.detector.frozen or any(signals.values())
-        if frozen and now - self.last_proc_scan >= 10:
+        # quét /proc (nhiều syscall + cấp phát) chỉ khi đã XÁC NHẬN đơ, không phải mỗi đỉnh PSI thoáng qua
+        if self.detector.frozen and now - self.last_proc_scan >= 10:
             self.processes = process_summary(self.root)
             self.last_proc_scan = now
         if frozen:
@@ -455,7 +456,11 @@ class Watchdog:
             if self.processes:
                 sample["d_state_count"] = self.processes.get("d_state_count")
             self.samples.append(sample)
-        for kind, arg in self.detector.update(signals, now):
+        events = self.detector.update(signals, now)
+        if any(kind == "start" for kind, _ in events):
+            self.processes = process_summary(self.root)  # ảnh chụp ngay lúc xác nhận đơ
+            self.last_proc_scan = now
+        for kind, arg in events:
             self.handle(kind, arg, now)
         return signals
 

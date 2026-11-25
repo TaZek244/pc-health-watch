@@ -22,7 +22,10 @@ HEARTBEAT_NAME = "pc-health-watch-heartbeat.json"
 
 # Quá 120 giây không có nhịp tim mới thì file không còn đủ tin cậy để tắt máy:
 # daemon có thể đã chết, bị dừng, hoặc chính nó đang bị treo vì lý do khác.
-STALE_SECONDS = 120
+# Chu kỳ ghi nhịp tim ~5 s, thăm dò 10 s + timeout 8 s: nhịp tim cũ hơn 30 s nghĩa là daemon đang kẹt,
+# khi đó trạng thái "gui=false" trong file có thể đã lỗi thời → không dùng để tắt máy.
+STALE_SECONDS = 30
+MAX_HEARTBEAT_BYTES = 4096
 
 
 def detect_probe(env=None, which=shutil.which) -> Optional[List[str]]:
@@ -275,17 +278,50 @@ class HeartbeatWriter:
             self._write("stopped", None, None, self._desktop)
 
 
-def read_heartbeat(path) -> Optional[dict]:
-    """Đọc một file nhịp tim. File hỏng/không phải object JSON → None."""
+def read_heartbeat(path, expected_uid=None) -> Optional[dict]:
+    """Đọc một file nhịp tim. File hỏng/không phải object JSON → None.
+
+    expected_uid (watchdog root dùng): file do người dùng ghi nên không tin mù quáng —
+    không theo symlink, phải là file thường, chủ sở hữu đúng UID, nhỏ hơn 4 KB, và
+    PID ghi trong file phải đang sống và thuộc đúng UID đó.
+    """
+    import stat as stat_mod
+
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
-        with open(path, encoding="utf-8") as stream:
-            data = json.load(stream)
-    except (OSError, ValueError):
+        fd = os.open(path, flags)
+    except OSError:
         return None
-    return data if isinstance(data, dict) else None
+    try:
+        info = os.fstat(fd)
+        if not stat_mod.S_ISREG(info.st_mode) or info.st_size > MAX_HEARTBEAT_BYTES:
+            return None
+        if expected_uid is not None and info.st_uid != expected_uid:
+            return None
+        raw = os.read(fd, MAX_HEARTBEAT_BYTES + 1)
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    if expected_uid is not None:
+        pid = data.get("pid")
+        if not isinstance(pid, int) or data.get("uid") != expected_uid:
+            return None
+        try:
+            if os.stat("/proc/{}".format(pid)).st_uid != expected_uid:
+                return None
+        except OSError:
+            return None  # tiến trình ghi đã chết
+    return data
 
 
-def read_all_heartbeats(run_root="/run/user") -> List[dict]:
+def read_all_heartbeats(run_root="/run/user", verify=True) -> List[dict]:
     """Đọc mọi nhịp tim dưới `run_root` (dùng bởi watchdog root).
 
     Bỏ qua thư mục không có file, file hỏng và JSON không phải object.
@@ -295,9 +331,11 @@ def read_all_heartbeats(run_root="/run/user") -> List[dict]:
         names = os.listdir(run_root)
     except OSError:
         return heartbeats
-    for name in sorted(names):
+    for name in sorted(names)[:64]:
+        if not name.isdigit():
+            continue  # chỉ /run/user/<uid>
         path = os.path.join(run_root, name, HEARTBEAT_NAME)
-        heartbeat = read_heartbeat(path)
+        heartbeat = read_heartbeat(path, expected_uid=int(name) if verify else None)
         if heartbeat is not None:
             heartbeats.append(heartbeat)
     return heartbeats
@@ -307,7 +345,7 @@ def gui_hung(heartbeat, now_mono, hang_seconds=45) -> bool:
     """True chỉ khi đủ mọi bằng chứng để watchdog tắt máy vì giao diện treo.
 
     Điều kiện: daemon còn chạy, lần thăm dò gần nhất là False, đã False liên
-    tục đủ `hang_seconds`, và bản thân nhịp tim không quá cũ (quá 120 giây thì
+    tục đủ `hang_seconds`, và bản thân nhịp tim không quá cũ (quá STALE_SECONDS=30 giây thì
     không đủ tin cậy — thà bỏ sót còn hơn tắt máy oan).
     """
     if not isinstance(heartbeat, dict):

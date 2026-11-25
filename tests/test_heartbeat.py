@@ -243,8 +243,43 @@ class ReadHeartbeatsTest(unittest.TestCase):
             # Thư mục không có file nhịp tim cũng phải bị bỏ qua.
             os.makedirs(os.path.join(run_root, "1003"))
 
-            result = hb.read_all_heartbeats(run_root=run_root)
+            result = hb.read_all_heartbeats(run_root=run_root, verify=False)
             self.assertEqual(result, [good])
+
+    def _write_hb(self, directory, data):
+        os.makedirs(directory, exist_ok=True)
+        path = os.path.join(directory, hb.HEARTBEAT_NAME)
+        with open(path, "w", encoding="utf-8") as stream:
+            json.dump(data, stream)
+        return path
+
+    def test_verify_accepts_live_pid_of_owner(self):
+        uid = os.getuid()
+        with tempfile.TemporaryDirectory() as run_root:
+            data = {"status": "running", "uid": uid, "pid": os.getpid(), "gui": False}
+            self._write_hb(os.path.join(run_root, str(uid)), data)
+            self.assertEqual(hb.read_all_heartbeats(run_root=run_root), [data])
+
+    def test_verify_rejects_forgeries(self):
+        uid = os.getuid()
+        with tempfile.TemporaryDirectory() as run_root:
+            base = {"status": "running", "gui": False, "gui_fail_since": 0, "mono": 0}
+            # thư mục của UID khác (file do mình sở hữu) → sai chủ
+            self._write_hb(os.path.join(run_root, str(uid + 1)), dict(base, uid=uid + 1, pid=os.getpid()))
+            # PID đã chết
+            self._write_hb(os.path.join(run_root, str(uid)), dict(base, uid=uid, pid=2**22 + 7))
+            self.assertEqual(hb.read_all_heartbeats(run_root=run_root), [])
+            # symlink trỏ tới file hợp lệ → không theo
+            real = self._write_hb(os.path.join(run_root, "real"), dict(base, uid=uid, pid=os.getpid()))
+            os.makedirs(os.path.join(run_root, "x"), exist_ok=True)
+            link_dir = os.path.join(run_root, str(uid))
+            os.unlink(os.path.join(link_dir, hb.HEARTBEAT_NAME))
+            os.symlink(real, os.path.join(link_dir, hb.HEARTBEAT_NAME))
+            self.assertEqual(hb.read_all_heartbeats(run_root=run_root), [])
+            # file quá lớn
+            os.unlink(os.path.join(link_dir, hb.HEARTBEAT_NAME))
+            self._write_hb(link_dir, dict(base, uid=uid, pid=os.getpid(), pad="x" * 5000))
+            self.assertEqual(hb.read_all_heartbeats(run_root=run_root), [])
 
     def test_missing_run_root_returns_empty(self):
         self.assertEqual(hb.read_all_heartbeats(run_root="/khong/ton/tai/dau"), [])

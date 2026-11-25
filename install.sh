@@ -110,6 +110,12 @@ WD_CONF=/etc/pc-health-watch/watchdog.json
 
 install_watchdog() {
     say "Cài freeze watchdog vào $WD_DEST (root-owned) — xem docs/FREEZE-WATCHDOG.md"
+    # mã sẽ chạy bằng root: từ chối symlink (có thể trỏ ra file người dùng sửa được)
+    if [[ -n "$(find "$SRC/healthwatch" "$SRC/docs" -type l 2>/dev/null)" ]]; then
+        echo "Mã nguồn chứa symlink — từ chối cài vào root:" >&2
+        find "$SRC/healthwatch" "$SRC/docs" -type l >&2
+        exit 1
+    fi
     sudo rm -rf "$WD_DEST/healthwatch"
     sudo install -d -m 0755 -o root -g root "$WD_DEST" /etc/pc-health-watch
     sudo cp -r "$SRC/healthwatch" "$WD_DEST/"
@@ -117,6 +123,10 @@ install_watchdog() {
     sudo find "$WD_DEST" -name __pycache__ -prune -exec rm -rf {} +
     sudo chown -R root:root "$WD_DEST"
     sudo chmod -R go-w "$WD_DEST"
+    if [[ -n "$(sudo find "$WD_DEST" -type l -o ! -user root -o -perm /022)" ]]; then
+        echo "Kiểm tra $WD_DEST thất bại (symlink / không phải root / ghi được bởi người khác)" >&2
+        exit 1
+    fi
     sudo python3 -m compileall -q "$WD_DEST/healthwatch" >/dev/null || true
 
     if sudo test -f "$WD_CONF"; then
