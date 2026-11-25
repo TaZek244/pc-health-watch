@@ -134,3 +134,7 @@ python3 -m healthwatch.collectors.system  # in 2 snapshot thô
 ```
 
 Kiến trúc và định dạng dữ liệu: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## License
+
+MIT — xem [LICENSE](LICENSE).
