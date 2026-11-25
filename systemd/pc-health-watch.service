@@ -1,0 +1,18 @@
+[Unit]
+Description=PC Health Watch — theo dõi sức khỏe máy, cảnh báo sớm, ghi hộp đen
+Documentation=file://%h/.local/share/pc-health-watch/README.md
+
+[Service]
+Type=simple
+Environment=PYTHONPATH=%h/.local/share/pc-health-watch
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 -m healthwatch daemon
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=5
+# Daemon nhỏ (~20 MB) nhưng phải sống sót khi máy thiếu RAM để còn ghi hộp đen
+MemoryHigh=150M
+MemoryMax=300M
+
+[Install]
+WantedBy=default.target
