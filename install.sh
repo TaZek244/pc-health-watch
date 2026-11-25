@@ -3,6 +3,7 @@
 #   ./install.sh                  cài/cập nhật + bật daemon (systemd --user)
 #   ./install.sh --smart-sudoers  cho phép đọc SMART không cần mật khẩu (cần sudo)
 #   ./install.sh --setup-system   bật journal lưu bền + SysRq + cài earlyoom/smartmontools (cần sudo)
+#   ./install.sh --watchdog       cài freeze watchdog (root): tự tắt máy an toàn khi đơ quá lâu (cần sudo)
 #   ./install.sh --uninstall      gỡ (giữ lại dữ liệu hộp đen)
 set -euo pipefail
 
@@ -103,12 +104,56 @@ setup_system() {
     fi
 }
 
+WD_DEST=/opt/pc-health-watch
+WD_UNIT=pc-health-watch-watchdog.service
+WD_CONF=/etc/pc-health-watch/watchdog.json
+
+install_watchdog() {
+    say "Cài freeze watchdog vào $WD_DEST (root-owned) — xem docs/FREEZE-WATCHDOG.md"
+    sudo rm -rf "$WD_DEST/healthwatch"
+    sudo install -d -m 0755 -o root -g root "$WD_DEST" /etc/pc-health-watch
+    sudo cp -r "$SRC/healthwatch" "$WD_DEST/"
+    [[ -d $SRC/docs ]] && sudo cp -r "$SRC/docs" "$WD_DEST/"
+    sudo find "$WD_DEST" -name __pycache__ -prune -exec rm -rf {} +
+    sudo chown -R root:root "$WD_DEST"
+    sudo chmod -R go-w "$WD_DEST"
+    sudo python3 -m compileall -q "$WD_DEST/healthwatch" >/dev/null || true
+
+    if sudo test -f "$WD_CONF"; then
+        say "Giữ cấu hình hiện có: $WD_CONF"
+    else
+        local mode=log action=poweroff
+        echo "Chế độ: 'log' = chỉ ghi lại lúc lẽ ra đã tắt máy (nên chạy thử vài ngày trước),"
+        echo "        'act' = tự tắt máy thật khi đơ quá 5 phút."
+        if ask "Bật chế độ act (tự tắt máy thật) ngay bây giờ?"; then mode=act; fi
+        if ask "Khởi động lại thay vì tắt hẳn (reboot thay cho poweroff)?"; then action=reboot; fi
+        printf '{\n  "mode": "%s",\n  "action": "%s",\n  "action_after_seconds": 300,\n  "detect_seconds": 30,\n  "oom_kill_after_seconds": 60\n}\n' \
+            "$mode" "$action" | sudo tee "$WD_CONF" >/dev/null
+        sudo chmod 0644 "$WD_CONF"
+    fi
+    sudo cp "$SRC/systemd/$WD_UNIT" "/etc/systemd/system/$WD_UNIT"
+    sudo systemctl daemon-reload
+    sudo systemctl enable "$WD_UNIT" >/dev/null
+    sudo systemctl restart "$WD_UNIT"
+    sleep 1
+    sudo systemctl --no-pager --lines=3 status "$WD_UNIT" || true
+    say "Đổi chế độ: sửa $WD_CONF rồi: sudo systemctl restart $WD_UNIT"
+    say "Tắt khẩn: sudo systemctl disable --now $WD_UNIT"
+}
+
 uninstall() {
     systemctl --user disable --now "$UNIT" 2>/dev/null || true
     rm -f "$UNIT_DIR/$UNIT" "$BIN/healthwatch"
     rm -rf "$DEST"
     systemctl --user daemon-reload
     [[ -f /etc/sudoers.d/pc-health-watch ]] && sudo rm -f /etc/sudoers.d/pc-health-watch
+    if [[ -f /etc/systemd/system/$WD_UNIT ]]; then
+        sudo systemctl disable --now "$WD_UNIT" || true
+        sudo rm -f "/etc/systemd/system/$WD_UNIT"
+        sudo rm -rf "$WD_DEST"
+        sudo systemctl daemon-reload
+        say "Đã gỡ watchdog (giữ $WD_CONF và báo cáo trong /var/lib/pc-health-watch)"
+    fi
     say "Đã gỡ. Dữ liệu hộp đen vẫn ở ~/.local/state/pc-health-watch (xóa tay nếu muốn)."
 }
 
@@ -116,8 +161,9 @@ case "${1:-}" in
     "") install_user ;;
     --smart-sudoers) smart_sudoers ;;
     --setup-system) setup_system ;;
+    --watchdog) install_watchdog ;;
     --uninstall) uninstall ;;
-    -h | --help) sed -n '2,7p' "$0" ;;
+    -h | --help) sed -n '2,8p' "$0" ;;
     *)
         echo "Tham số không hợp lệ: $1" >&2
         exit 1

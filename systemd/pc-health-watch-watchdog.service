@@ -1,0 +1,30 @@
+[Unit]
+Description=PC Health Watch — freeze watchdog (phát hiện máy đơ, tự tắt an toàn)
+Documentation=file:///opt/pc-health-watch/docs/FREEZE-WATCHDOG.md
+After=local-fs.target
+
+[Service]
+Type=simple
+# Mã root-owned ở /opt — không bao giờ chạy mã root từ thư mục người dùng
+Environment=PYTHONPATH=/opt/pc-health-watch
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 -m healthwatch.watchdog
+Restart=on-failure
+RestartSec=5
+# Phải là thứ cuối cùng còn chạy khi máy đơ
+OOMScoreAdjust=-1000
+Nice=-15
+IOSchedulingClass=realtime
+IOSchedulingPriority=0
+LimitMEMLOCK=infinity
+RuntimeDirectory=pc-health-watch
+RuntimeDirectoryMode=0755
+StateDirectory=pc-health-watch
+StateDirectoryMode=0755
+NoNewPrivileges=yes
+ProtectHome=read-only
+ProtectSystem=full
+# KHÔNG bật ProtectKernelTunables: nó chặn ghi /proc/sysrq-trigger
+
+[Install]
+WantedBy=multi-user.target
