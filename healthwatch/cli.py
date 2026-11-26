@@ -270,6 +270,13 @@ def cmd_storage(args):
     return 0
 
 
+def _pkg(ubuntu, arch=None):
+    """Lệnh cài gói theo distro đang chạy (Arch dùng pacman, còn lại apt)."""
+    if shutil.which("pacman"):
+        return "sudo pacman -S --needed " + (arch or ubuntu)
+    return "sudo apt install " + ubuntu
+
+
 def _check_rows():
     rows = []  # (ok: True/False/None, tên, chi tiết, gợi ý)
 
@@ -312,7 +319,14 @@ def _check_rows():
         code_e == 0 or code_o == 0,
         "OOM killer sớm (earlyoom/systemd-oomd)",
         "đang chạy" if (code_e == 0 or code_o == 0) else ("đã cài nhưng chưa chạy" if oom else "chưa có"),
-        "sudo apt install earlyoom (Ubuntu 20.04) — tránh đơ cứng khi hết RAM",
+        (
+            "sudo systemctl enable --now earlyoom"
+            if shutil.which("earlyoom")
+            else "sudo systemctl enable --now systemd-oomd"
+            if oom
+            else _pkg("earlyoom") + " && sudo systemctl enable --now earlyoom"
+        )
+        + " — tránh đơ cứng khi hết RAM",
     )
     swaps = util.read_text("/proc/swaps").splitlines()[1:]
     add(bool(swaps), "Swap", f"{len(swaps)} vùng swap" if swaps else "không có", "tạo swapfile hoặc cài zram-config")
@@ -326,19 +340,19 @@ def _check_rows():
             "chạy ./install.sh --smart-sudoers",
         )
     else:
-        add(False, "SMART (sức khỏe SSD)", "chưa cài smartctl", "sudo apt install smartmontools")
+        add(False, "SMART (sức khỏe SSD)", "chưa cài smartctl", _pkg("smartmontools"))
     add(
         bool(shutil.which("notify-send")),
         "notify-send",
         "có" if shutil.which("notify-send") else "thiếu",
-        "sudo apt install libnotify-bin",
+        _pkg("libnotify-bin", "libnotify"),
     )
     try:
         import gi  # noqa: F401
 
         add(True, "python3-gi (popup)", "có")
     except ImportError:
-        add(False, "python3-gi (popup)", "thiếu", "sudo apt install python3-gi gir1.2-gtk-3.0")
+        add(False, "python3-gi (popup)", "thiếu", _pkg("python3-gi gir1.2-gtk-3.0", "python-gobject gtk3"))
     code_d, out_d = util.run(["systemctl", "--user", "is-active", "pc-health-watch"], timeout=3)
     add(
         code_d == 0,

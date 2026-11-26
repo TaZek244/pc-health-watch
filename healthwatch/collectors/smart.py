@@ -98,5 +98,14 @@ def read_smart(device, use_sudo=True, runner=util.run):
     return parse_smart_json(data)
 
 
+def available():
+    """Có smartctl chưa (sudo dùng secure_path gồm /usr/sbin, PATH người dùng có thể thiếu)."""
+    import shutil
+
+    return bool(shutil.which("smartctl") or os.path.exists("/usr/sbin/smartctl") or os.path.exists("/usr/bin/smartctl"))
+
+
 def read_all(root="/", use_sudo=True, runner=util.run):
+    if not available():
+        return []  # không gọi sudo vô ích: mỗi lần thất bại là một dòng "password is required" trong log
     return [item for item in (read_smart(device, use_sudo, runner) for device in list_disks(root)) if item is not None]

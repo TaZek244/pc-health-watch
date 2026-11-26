@@ -160,10 +160,19 @@ class Daemon:
             from .collectors import smart
         except ImportError:
             return
+        if getattr(self, "smart_disabled", False) or not smart.available():
+            return
         try:
             results = smart.read_all()
         except Exception as error:
             log(f"lỗi đọc SMART: {error}")
+            return
+        if not results and os.geteuid() != 0:
+            # sudo -n bị từ chối: ngừng thử trong phiên này để không spam log xác thực mỗi giờ
+            self.smart_disabled = True
+            log(
+                "không đọc được SMART (cần sudo không mật khẩu) — chạy ./install.sh --smart-sudoers; tạm tắt kiểm tra SMART"
+            )
             return
         for disk in results:
             self.recorder.write("smart", {"smart": disk})
